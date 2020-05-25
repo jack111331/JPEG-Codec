@@ -4,6 +4,7 @@
 
 #include "Segment.h"
 #include <fstream>
+#include <iostream>
 
 using namespace std;
 
@@ -12,6 +13,7 @@ int main() {
     ifstream ifs("img/gig-sn01.jpg", std::ios::binary);
     if(ifs.is_open()) {
         ifs >> data;
+        cout << data;
         ifs.close();
     }
 }

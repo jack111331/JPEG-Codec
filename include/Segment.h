@@ -6,6 +6,7 @@
 #define JPEG_CODEC_SEGMENT_H
 
 #include <fstream>
+#include <vector>
 #include <cstdint>
 
 typedef struct ColorType {
@@ -19,11 +20,15 @@ public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xE0";
     constexpr static char IDENTIFIER_MAGIC_NUMBER[] = "\x4A\x46\x49\x46\x00";
 
+    static bool checkSegment(const char header[]);
+
     APP0() : m_thumbnailData(nullptr) {};
 
     ~APP0();
 
     friend std::ifstream &operator>>(std::ifstream &ifs, APP0 &data);
+    friend std::ostream &operator<<(std::ostream &os, const APP0 &data);
+
 
     uint16_t m_version;
     uint8_t m_densityUnit;
@@ -38,19 +43,24 @@ class DQT {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xDB";
 
-    DQT() : m_dqtSize(0), m_PTq{}, m_qs{} {};
+    static bool checkSegment(const char header[]);
+
+    DQT() : m_PTq{}, m_qs{} {};
 
     ~DQT();
 
     friend std::ifstream &operator>>(std::ifstream &ifs, DQT &data);
+    friend std::ostream &operator<<(std::ostream &os, const DQT &data);
 
-    int m_dqtSize;
-    uint8_t m_PTq[4];
-    void *m_qs[4];
+
+    uint8_t m_PTq;
+    void *m_qs;
 };
 
 class ColorComponent {
     friend std::ifstream &operator>>(std::ifstream &ifs, ColorComponent &data);
+    friend std::ostream &operator<<(std::ostream &os, const ColorComponent &data);
+
 
     uint8_t m_id;
     uint8_t m_sampleFactor;
@@ -61,7 +71,11 @@ class SOF0 {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xC0";
 
+    static bool checkSegment(const char header[]);
+
     friend std::ifstream &operator>>(std::ifstream &ifs, SOF0 &data);
+    friend std::ostream &operator<<(std::ostream &os, const SOF0 &data);
+
 
     uint8_t m_precision;
     uint16_t m_height;
@@ -72,14 +86,15 @@ public:
 
 class HuffmanTable {
 public:
-    HuffmanTable() : m_dhtSize(0), m_length(0), m_codeword{} {};
+    HuffmanTable() : m_length(0), m_codeword{} {};
     ~HuffmanTable();
 
     friend std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data);
+    friend std::ostream &operator<<(std::ostream &os, const HuffmanTable &data);
+
 
     int getTableLength() const;
 
-    int m_dhtSize;
     uint8_t m_idAndType;
     uint8_t m_codeAmountOfBit[16 + 1];
     uint8_t *m_codeword[16+1];
@@ -89,21 +104,77 @@ private:
 
 class DHT {
 public:
-    DHT() : m_dhtSize(0) {};
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xC4";
 
-    friend std::ifstream &operator>>(std::ifstream &ifs, DHT &data);
+    static bool checkSegment(const char header[]);
 
-    int m_dhtSize;
-    HuffmanTable m_huffmanTable[4];
+    friend std::ifstream &operator>>(std::ifstream &ifs, DHT &data);
+    friend std::ostream &operator<<(std::ostream &os, const DHT &data);
+
+
+    HuffmanTable m_huffmanTable;
+};
+
+class DRI {
+public:
+    constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xDD";
+
+    static bool checkSegment(const char header[]);
+
+    friend std::ifstream &operator>>(std::ifstream &ifs, DRI &data);
+    friend std::ostream &operator<<(std::ostream &os, const DRI &data);
+
+
+    uint16_t m_restartInterval;
+};
+
+class SOS {
+public:
+    constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xDA";
+
+    static bool checkSegment(const char header[]);
+
+    friend std::ifstream &operator>>(std::ifstream &ifs, SOS &data);
+    friend std::ostream &operator<<(std::ostream &os, const SOS &data);
+
+    uint8_t m_componentSize;
+    ColorComponent m_component[4];
+    uint8_t m_spectrumSelectionStart;
+    uint8_t m_spectrumSelectionEnd;
+    uint8_t m_spectrumSelection;
+};
+
+class MCU {
+public:
+    friend std::ifstream &operator>>(std::ifstream &ifs, SOS &data);
+    friend std::ostream &operator<<(std::ostream &os, const SOS &data);
+
+    uint8_t m_componentSize;
+    ColorComponent m_component[4];
+    uint8_t m_spectrumSelectionStart;
+    uint8_t m_spectrumSelectionEnd;
+    uint8_t m_spectrumSelection;
 };
 
 class JPEG {
 public:
-    APP0 m_app0;
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xD8";
 
+    JPEG() : m_rstN(0), m_dqtSize(0), m_dhtSize(0) {};
+
     friend std::ifstream &operator>>(std::ifstream &ifs, JPEG &data);
+    friend std::ostream &operator<<(std::ostream &os, const JPEG &data);
+
+    APP0 m_app0;
+    int m_dqtSize;
+    DQT m_dqt[4];
+    SOF0 m_sof0;
+    int m_dhtSize;
+    DHT m_dht[4];
+    DRI m_dri;
+    SOS m_sos;
+    uint8_t m_rstN;
+    std::vector<uint8_t> m_scanData;
 };
 
 #endif //JPEG_CODEC_SEGMENT_H
