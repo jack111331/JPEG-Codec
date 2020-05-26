@@ -93,7 +93,7 @@ public:
 };
 
 struct BitStreamBuffer {
-    int m_readLength = 0;
+    int m_readLength = 8;
     uint8_t m_buffer = 0;
 
     friend std::ifstream &operator>>(std::ifstream &ifs, BitStreamBuffer &data);
@@ -131,7 +131,7 @@ public:
 
     bool getCode(uint16_t codeword, int length, uint8_t &output) const;
 
-    uint8_t m_idAndType;
+    uint8_t m_typeAndId;
     uint8_t m_codeAmountOfBit[16 + 1];
     uint8_t *m_codeword[16 + 1];
     uint32_t m_table[16 + 1];
@@ -174,7 +174,6 @@ public:
 
     uint8_t m_id;
     uint8_t m_dcac;
-    uint8_t m_dhtId;
 };
 
 class SOS {
@@ -208,7 +207,7 @@ public:
 
     uint8_t m_verticalSize;
     uint8_t m_horizontalSize;
-    uint8_t **m_table[8][8];
+    float **m_table[8][8];
 
 private:
     static float convertToCorrectCoefficient(uint16_t rawCoefficient, int length);
@@ -260,6 +259,7 @@ public:
 class JPEG {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xD8";
+    constexpr static char EIO_MARKER_MAGIC_NUMBER[] = "\xFF\xD9";
 
     JPEG() : m_rstN(0), m_dqtSize(0), m_dhtSize{}, m_dht{} {};
 

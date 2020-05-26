@@ -19,6 +19,7 @@ constexpr char DHT::MARKER_MAGIC_NUMBER[];
 constexpr char DRI::MARKER_MAGIC_NUMBER[];
 constexpr char SOS::MARKER_MAGIC_NUMBER[];
 constexpr char JPEG::MARKER_MAGIC_NUMBER[];
+constexpr char JPEG::EIO_MARKER_MAGIC_NUMBER[];
 constexpr int ComponentTable::AC_ALL_ZERO;
 constexpr int ComponentTable::AC_FOLLOWING_SIXTEEN_ZERO;
 constexpr int ComponentTable::AC_NORMAL_STATE;
@@ -100,16 +101,16 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
     // Precision and id
     ifs >> data.m_PTq;
     // Quantization table
-    data.m_qs = (data.m_PTq & 0x10) ? (void *) (new uint16_t[64])
+    data.m_qs = (data.m_PTq & 0xf0) ? (void *) (new uint16_t[64])
                                     : (void *) (new uint8_t[64]);
     for (int i = 0; i < 64; ++i) {
-        if ((data.m_PTq & 0x10)) {
+        if ((data.m_PTq & 0xf0)) {
             ifs >> ((uint16_t *) data.m_qs)[i];
         } else {
             ifs >> ((uint8_t *) data.m_qs)[i];
         }
     }
-    length -= 1 + 64 * ((data.m_PTq & 0x10) + 1);
+    length -= 1 + 64 * ((data.m_PTq & 0xf0) + 1);
     assert(length == 0);
 
     return ifs;
@@ -121,7 +122,7 @@ std::ostream &operator<<(std::ostream &os, const DQT &data) {
     os << "ID: " << (data.m_PTq & 0x0f) << std::endl;
     os << "Quantization Table Content: " << std::endl;
     for (int j = 0; j < 64; ++j) {
-        if ((data.m_PTq & 0x10)) {
+        if ((data.m_PTq & 0xf0)) {
             os << hexify(((uint16_t *) data.m_qs)[j]) << " ";
         } else {
             os << hexify(((uint8_t *) data.m_qs)[j]) << " ";
@@ -135,7 +136,7 @@ std::ostream &operator<<(std::ostream &os, const DQT &data) {
 }
 
 DQT::~DQT() {
-    if ((m_PTq & 0x10)) {
+    if ((m_PTq & 0xf0)) {
         delete[] (uint16_t *) m_qs;
     } else {
         delete[] (uint8_t *) m_qs;
@@ -196,7 +197,7 @@ std::ostream &operator<<(std::ostream &os, const SOF0 &data) {
 }
 
 std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
-    ifs >> data.m_idAndType;
+    ifs >> data.m_typeAndId;
     // Quantization table
     data.m_length += 1;
     data.m_length += 16;
@@ -217,8 +218,8 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
 }
 
 std::ostream &operator<<(std::ostream &os, const HuffmanTable &data) {
-    os << "D/AC: " << ((data.m_idAndType >> 4) ? "AC" : "DC") << std::endl;
-    os << "ID: " << (data.m_idAndType & 0x0f) << std::endl;
+    os << "D/AC: " << ((data.m_typeAndId >> 4) ? "AC" : "DC") << std::endl;
+    os << "ID: " << (data.m_typeAndId & 0x0f) << std::endl;
     uint16_t codeword = 0;
     for (int i = 1; i <= 16; ++i) {
         for (int j = 0; j < data.m_codeAmountOfBit[i]; ++j) {
@@ -235,7 +236,8 @@ int HuffmanTable::getTableLength() const {
 }
 
 bool HuffmanTable::getCode(uint16_t codeword, int length, uint8_t &output) const {
-    if (m_codeAmountOfBit[length] && codeword >= m_table[length] && codeword - m_table[length] < m_codeAmountOfBit[length]) {
+    if (m_codeAmountOfBit[length] && codeword >= m_table[length] &&
+        codeword - m_table[length] < m_codeAmountOfBit[length]) {
         output = m_codeword[length][codeword - m_table[length]];
         return true;
     }
@@ -296,14 +298,13 @@ std::ostream &operator<<(std::ostream &os, const DRI &data) {
 std::ifstream &operator>>(std::ifstream &ifs, DHTComponent &data) {
     ifs >> data.m_id;
     ifs >> data.m_dcac;
-    ifs >> data.m_dhtId;
     return ifs;
 }
 
 std::ostream &operator<<(std::ostream &os, const DHTComponent &data) {
     os << "Component ID: " << hexify(data.m_id) << std::endl;
-    os << "DC/AC id: " << hexify(data.m_dcac) << std::endl;
-    os << "Corresponding DHT ID: " << hexify(data.m_dhtId) << std::endl;
+    os << "Use DC Table id: " << (data.m_dcac >> 4) << std::endl;
+    os << "Use AC Table id: " << (data.m_dcac & 0x0f) << std::endl;
     return os;
 }
 
@@ -340,28 +341,24 @@ std::ostream &operator<<(std::ostream &os, const SOS &data) {
 }
 
 std::ifstream &operator>>(std::ifstream &ifs, BitStreamBuffer &data) {
-    ifs >> data.m_buffer;
-    data.m_readLength = 0;
+    if (data.m_readLength == 8) {
+        ifs >> data.m_buffer;
+        uint8_t dummy;
+        if(data.m_buffer == 0xFF) {
+            ifs >> dummy;
+        }
+        data.m_readLength = 0;
+    }
     return ifs;
 }
 
 int BitStream::putWord(BitStreamBuffer &input, int length) {
-    if (input.m_readLength == 8) {
-        return length;
-    } else if (length + m_length % 8 > 8) {
-        int bitToRead = (8 - m_length % 8);
-        m_buffer <<= bitToRead;
-        m_buffer |= ((input.m_buffer >> (8 - bitToRead - input.m_readLength)) & ((1 << bitToRead) - 1));
-        input.m_readLength += (8 - m_length % 8);
-        m_length += (8 - m_length % 8);
-        return (length + m_length) % 8;
-    } else {
-        m_buffer <<= length;
-        m_buffer |= ((input.m_buffer >> (8 - length - input.m_readLength)) & ((1 << length) - 1));
-        input.m_readLength += length;
-        m_length += length;
-        return 0;
-    }
+    int bitToRead = std::min(8 - input.m_readLength, length);
+    m_buffer <<= bitToRead;
+    m_buffer |= ((input.m_buffer >> ((8 - input.m_readLength) - bitToRead)) & ((1 << bitToRead) - 1));
+    m_length += bitToRead;
+    input.m_readLength += bitToRead;
+    return length - bitToRead;
 }
 
 void BitStream::clear() {
@@ -382,12 +379,16 @@ void ComponentTable::read(std::ifstream &ifs, const ComponentTable *lastComponen
                           const DHT &acTable, BitStreamBuffer &bsb) {
     m_verticalSize = verticalSize;
     m_horizontalSize = horizontalSize;
+    for (int i = 0; i < 8; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            m_table[i][j] = new float *[verticalSize];
+            for (int k = 0; k < verticalSize; ++k) {
+                m_table[i][j][k] = new float[horizontalSize];
+            }
+        }
+    }
     for (int i = 0; i < verticalSize; ++i) {
         for (int j = 0; j < horizontalSize; ++j) {
-            m_table[i][j] = new uint8_t *[verticalSize];
-            for (int k = 0; k < verticalSize; ++k) {
-                m_table[i][j][k] = new uint8_t[horizontalSize];
-            }
             uint32_t count = 1;
             m_table[0][0][i][j] = readDc(ifs, dcTable, bsb);
             if (lastComponent) {
@@ -443,10 +444,15 @@ std::ostream &operator<<(std::ostream &os, const ComponentTable &data) {
 
 
 float ComponentTable::convertToCorrectCoefficient(uint16_t rawCoefficient, int length) {
-    if ((rawCoefficient >> (length - 1)) == 1) {
-        rawCoefficient = ~rawCoefficient;
+    float result;
+    if ((rawCoefficient >> (length - 1)) == 0) {
+        rawCoefficient ^= ((1 << length) - 1);
+        result = rawCoefficient;
+        result = -result;
+        return result;
     }
-    return rawCoefficient;
+    result = rawCoefficient;
+    return result;
 }
 
 float ComponentTable::readDc(std::ifstream &ifs, const DHT &dcTable, BitStreamBuffer &bsb) {
@@ -517,13 +523,13 @@ void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
         DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0f];
         if (jpeg.m_mcus.m_lastMcu) {
             m_component[i].read(ifs, &jpeg.m_mcus.m_lastMcu->m_component[i],
-                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4),
-                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f), *dc, *ac, bsb);
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f),
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4), *dc, *ac, bsb);
 
         } else {
             m_component[i].read(ifs, nullptr,
-                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4),
-                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f), *dc, *ac, bsb);
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f),
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4), *dc, *ac, bsb);
         }
     }
 }
@@ -539,8 +545,8 @@ std::ostream &operator<<(std::ostream &os, const MCU &data) {
 
 void MCUS::read(std::ifstream &ifs, const JPEG &jpeg) {
     // Calculate how many mcu in row and column
-    m_mcuWidth = (jpeg.m_sof0.m_width - 1) / (jpeg.m_sof0.m_maxHorizontalComponent) + 1;
-    m_mcuHeight = (jpeg.m_sof0.m_height - 1) / (jpeg.m_sof0.m_maxVerticalComponent) + 1;
+    m_mcuWidth = (jpeg.m_sof0.m_width - 1) / (8 * jpeg.m_sof0.m_maxHorizontalComponent) + 1;
+    m_mcuHeight = (jpeg.m_sof0.m_height - 1) / (8 * jpeg.m_sof0.m_maxVerticalComponent) + 1;
     m_mcu = new MCU *[m_mcuHeight];
     BitStreamBuffer bsb;
     for (int i = 0; i < m_mcuHeight; ++i) {
@@ -584,10 +590,10 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
         } else if (DHT::checkSegment(header)) {
             DHT *newDHT = new DHT();
             ifs >> *newDHT;
-            data.m_dht[newDHT->m_huffmanTable.m_idAndType & 4][data.m_dhtSize[newDHT->m_huffmanTable.m_idAndType &
-                                                                              4]++] = newDHT;
-            std::cout << *data.m_dht[newDHT->m_huffmanTable.m_idAndType & 4][
-                    data.m_dhtSize[newDHT->m_huffmanTable.m_idAndType & 4] - 1];
+            data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4][newDHT->m_huffmanTable.m_typeAndId & 0x0f] = newDHT;
+            data.m_dhtSize[newDHT->m_huffmanTable.m_typeAndId >> 4]++;
+            std::cout
+                    << *data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4][newDHT->m_huffmanTable.m_typeAndId & 0x0f];
         } else if (SOF0::checkSegment(header)) {
             ifs >> data.m_sof0;
             std::cout << data.m_sof0;
@@ -606,6 +612,13 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
     } while (true);
 
     data.m_mcus.read(ifs, data);
+    readData(ifs, header, 2);
+    if (!checkData(header, JPEG::EIO_MARKER_MAGIC_NUMBER, sizeof(JPEG::EIO_MARKER_MAGIC_NUMBER))) {
+        cout << "[ERROR] Unable to recognize header " << hexify(header, 2) << "." << endl;
+        exit(1);
+    } else {
+        cout << "[INFO] Successfully parse the file." << endl;
+    }
     // TODO Read EOI
 }
 
