@@ -11,11 +11,15 @@ using namespace std;
 
 int main() {
     JPEG data;
-    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new NaiveDezigzag());
+    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new NaiveDezigzag()).setIDCT(
+            new IDCT()).setUpsampling(new NaiveUpsampling());
     ifstream ifs("img/gig-sn01.jpg", std::ios::binary);
     if (ifs.is_open()) {
         ifs >> data;
         ifs.close();
         decoder.precess(data);
+        ofstream ofs("img/gig-sn01.ppm");
+        data.m_image->toPpm(ofs, data);
+        ofs.close();
     }
 }

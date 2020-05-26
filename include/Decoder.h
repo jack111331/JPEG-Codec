@@ -40,19 +40,78 @@ public:
 class IDCT : public IIDCT {
 public:
     void process(JPEG &jpeg) override;
+
+private:
+    void performIdctOnComponentTable(ComponentTable &table, ComponentTable &result);
+
+    float computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, int horizonComponent, int i, int j);
+
+    float coefficientPrecompute(int x, int y);
+};
+
+class ImageBlock {
+public:
+    ImageBlock(): m_table(nullptr) {};
+    void FromComponentTable(const ComponentTable &table, int maxVerticalComponent, int maxHorizontalComponent);
+
+    float **m_table;
+};
+
+class ImageMCU {
+public:
+    void fromMCU(const JPEG &jpeg, const MCU &mcu);
+
+    ImageBlock m_block[4];
+
+};
+
+class Image {
+public:
+    Image() : m_imcu(nullptr), m_imageBuffer{}, m_storedInBuffer(false) {};
+    void fromMCUS(const JPEG &jpeg, const MCUS &mcus);
+
+    void toPpm(std::ofstream &ofs, const JPEG &jpeg);
+    static uint8_t yCbCrConverter(int component, float y, float cb, float cr);
+
+    int m_mcuWidth, m_mcuHeight;
+    ImageMCU **m_imcu;
+    float **m_imageBuffer[3];
+    bool m_storedInBuffer;
+
+    static constexpr int R_COMPONENT = 0;
+    static constexpr int G_COMPONENT = 1;
+    static constexpr int B_COMPONENT = 2;
+};
+
+class Upsampling {
+public:
+    virtual void process(JPEG &jpeg) = 0;
+};
+
+class NaiveUpsampling : public Upsampling {
+public:
+    void process(JPEG &jpeg) override;
 };
 
 class Decoder {
 public:
-    Decoder(): m_dequantization(nullptr), m_dezigzag(nullptr) {};
+    Decoder() : m_dequantization(nullptr), m_dezigzag(nullptr) {};
+
     Decoder &setDequantization(Dequantization *dequantizationStrategy);
+
     Decoder &setDezigzag(Dezigzag *dezigzagStrategy);
+
     Decoder &setIDCT(IIDCT *idctStrategy);
+
+    Decoder &setUpsampling(Upsampling *upsamplingStrategy);
+
     void precess(JPEG &jpeg);
+
 private:
     Dequantization *m_dequantization;
     Dezigzag *m_dezigzag;
     IIDCT *m_idct;
+    Upsampling *m_upsampling;
 };
 
 

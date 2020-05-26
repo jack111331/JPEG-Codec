@@ -262,12 +262,14 @@ public:
 
 };
 
+class Image;
+
 class JPEG {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xD8";
     constexpr static char EIO_MARKER_MAGIC_NUMBER[] = "\xFF\xD9";
 
-    JPEG() : m_rstN(0), m_dqt{}, m_dht{} {};
+    JPEG() : m_rstN(0), m_dqt{}, m_dht{}, m_image(nullptr) {};
 
     ~JPEG();
 
@@ -283,6 +285,8 @@ public:
     SOS m_sos;
     uint8_t m_rstN;
     MCUS m_mcus;
+
+    Image *m_image;
 
     static constexpr int DC_COMPONENT = 0;
     static constexpr int AC_COMPONENT = 1;
