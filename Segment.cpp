@@ -19,6 +19,14 @@ constexpr char DHT::MARKER_MAGIC_NUMBER[];
 constexpr char DRI::MARKER_MAGIC_NUMBER[];
 constexpr char SOS::MARKER_MAGIC_NUMBER[];
 constexpr char JPEG::MARKER_MAGIC_NUMBER[];
+constexpr int ComponentTable::AC_ALL_ZERO;
+constexpr int ComponentTable::AC_FOLLOWING_SIXTEEN_ZERO;
+constexpr int ComponentTable::AC_NORMAL_STATE;
+constexpr int MCU::Y_COMPONENT;
+constexpr int MCU::CB_COMPONENT;
+constexpr int MCU::CR_COMPONENT;
+constexpr int JPEG::AC_COMPONENT;
+constexpr int JPEG::DC_COMPONENT;
 
 std::ifstream &operator>>(std::ifstream &ifs, ColorType &data) {
     ifs >> data.r;
@@ -161,8 +169,13 @@ std::ifstream &operator>>(std::ifstream &ifs, SOF0 &data) {
     ifs >> data.m_height;
     ifs >> data.m_width;
     ifs >> data.m_componentSize;
-    for (int i = 0; i < (int)data.m_componentSize; ++i) {
+    data.m_maxHorizontalComponent = data.m_maxVerticalComponent = 0;
+    for (int i = 0; i < (int) data.m_componentSize; ++i) {
         ifs >> data.m_component[i];
+        data.m_maxHorizontalComponent = std::max(data.m_maxHorizontalComponent,
+                                                 (uint8_t) (data.m_component[i].m_sampleFactor >> 4));
+        data.m_maxVerticalComponent = std::max(data.m_maxVerticalComponent,
+                                               (uint8_t) (data.m_component[i].m_sampleFactor & 0x0f));
     }
     length -= 6 + data.m_componentSize * sizeof(ColorComponent);
     assert(length == 0);
@@ -191,6 +204,7 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
         ifs >> data.m_codeAmountOfBit[i];
         data.m_length += data.m_codeAmountOfBit[i];
         if (data.m_codeAmountOfBit[i]) {
+            data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1);
             data.m_codeword[i] = new uint8_t[data.m_codeAmountOfBit[i]];
         }
     }
@@ -205,18 +219,27 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
 std::ostream &operator<<(std::ostream &os, const HuffmanTable &data) {
     os << "D/AC: " << ((data.m_idAndType >> 4) ? "AC" : "DC") << std::endl;
     os << "ID: " << (data.m_idAndType & 0x0f) << std::endl;
+    uint16_t codeword = 0;
     for (int i = 1; i <= 16; ++i) {
-        os << "Length " << i << ": ";
         for (int j = 0; j < data.m_codeAmountOfBit[i]; ++j) {
-            os << hexify(data.m_codeword[i][j]) << " ";
+            os << binify(codeword, i) << " " << hexify(data.m_codeword[i][j]) << std::endl;
+            codeword++;
         }
-        os << std::endl;
+        codeword <<= 1;
     }
     return os;
 }
 
 int HuffmanTable::getTableLength() const {
     return m_length;
+}
+
+bool HuffmanTable::getCode(uint16_t codeword, int length, uint8_t &output) const {
+    if (m_codeAmountOfBit[length] && codeword >= m_table[length] && codeword - m_table[length] < m_codeAmountOfBit[length]) {
+        output = m_codeword[length][codeword - m_table[length]];
+        return true;
+    }
+    return false;
 }
 
 HuffmanTable::~HuffmanTable() {
@@ -270,6 +293,20 @@ std::ostream &operator<<(std::ostream &os, const DRI &data) {
     return os;
 }
 
+std::ifstream &operator>>(std::ifstream &ifs, DHTComponent &data) {
+    ifs >> data.m_id;
+    ifs >> data.m_dcac;
+    ifs >> data.m_dhtId;
+    return ifs;
+}
+
+std::ostream &operator<<(std::ostream &os, const DHTComponent &data) {
+    os << "Component ID: " << hexify(data.m_id) << std::endl;
+    os << "DC/AC id: " << hexify(data.m_dcac) << std::endl;
+    os << "Corresponding DHT ID: " << hexify(data.m_dhtId) << std::endl;
+    return os;
+}
+
 bool SOS::checkSegment(const char header[]) {
     return checkData(header, SOS::MARKER_MAGIC_NUMBER, sizeof(SOS::MARKER_MAGIC_NUMBER));
 }
@@ -302,6 +339,230 @@ std::ostream &operator<<(std::ostream &os, const SOS &data) {
     return os;
 }
 
+std::ifstream &operator>>(std::ifstream &ifs, BitStreamBuffer &data) {
+    ifs >> data.m_buffer;
+    data.m_readLength = 0;
+    return ifs;
+}
+
+int BitStream::putWord(BitStreamBuffer &input, int length) {
+    if (input.m_readLength == 8) {
+        return length;
+    } else if (length + m_length % 8 > 8) {
+        int bitToRead = (8 - m_length % 8);
+        m_buffer <<= bitToRead;
+        m_buffer |= ((input.m_buffer >> (8 - bitToRead - input.m_readLength)) & ((1 << bitToRead) - 1));
+        input.m_readLength += (8 - m_length % 8);
+        m_length += (8 - m_length % 8);
+        return (length + m_length) % 8;
+    } else {
+        m_buffer <<= length;
+        m_buffer |= ((input.m_buffer >> (8 - length - input.m_readLength)) & ((1 << length) - 1));
+        input.m_readLength += length;
+        m_length += length;
+        return 0;
+    }
+}
+
+void BitStream::clear() {
+    m_buffer = 0;
+    m_length = 0;
+}
+
+int BitStream::getLength() const {
+    return m_length;
+}
+
+uint16_t BitStream::getWord() const {
+    return m_buffer;
+}
+
+void ComponentTable::read(std::ifstream &ifs, const ComponentTable *lastComponent, uint8_t verticalSize,
+                          uint8_t horizontalSize, const DHT &dcTable,
+                          const DHT &acTable, BitStreamBuffer &bsb) {
+    m_verticalSize = verticalSize;
+    m_horizontalSize = horizontalSize;
+    for (int i = 0; i < verticalSize; ++i) {
+        for (int j = 0; j < horizontalSize; ++j) {
+            m_table[i][j] = new uint8_t *[verticalSize];
+            for (int k = 0; k < verticalSize; ++k) {
+                m_table[i][j][k] = new uint8_t[horizontalSize];
+            }
+            uint32_t count = 1;
+            m_table[0][0][i][j] = readDc(ifs, dcTable, bsb);
+            if (lastComponent) {
+                m_table[0][0][i][j] += lastComponent->m_table[0][0][i][j];
+            }
+            while (count < 64) {
+                ComponentTable::ACValue acValue = readAc(ifs, acTable, bsb);
+                switch (acValue.state) {
+                    case AC_ALL_ZERO : {
+                        while (count < 64) {
+                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            ++count;
+                        }
+                        break;
+                    }
+                    case AC_FOLLOWING_SIXTEEN_ZERO : {
+                        for (int k = 0; k < 16; ++k) {
+                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            ++count;
+                        }
+                        break;
+                    }
+                    case AC_NORMAL_STATE : {
+                        for (int k = 0; k < acValue.trailingZero; ++k) {
+                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            ++count;
+                        }
+                        m_table[count >> 3][count & 0x07][i][j] = acValue.value;
+                        ++count;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+std::ostream &operator<<(std::ostream &os, const ComponentTable &data) {
+    for (int i = 0; i < data.m_verticalSize; ++i) {
+        for (int j = 0; j < data.m_horizontalSize; ++j) {
+            os << "=========== Sample of (" << i << ", " << j << ") Start =========" << std::endl;
+            for (int k = 0; k < 8; ++k) {
+                for (int l = 0; l < 8; ++l) {
+                    os << data.m_table[k][l][i][j] << " ";
+                }
+                os << std::endl;
+            }
+            os << "=========== Sample of (" << i << ", " << j << ") End =========" << std::endl;
+        }
+    }
+    return os;
+}
+
+
+float ComponentTable::convertToCorrectCoefficient(uint16_t rawCoefficient, int length) {
+    if ((rawCoefficient >> (length - 1)) == 1) {
+        rawCoefficient = ~rawCoefficient;
+    }
+    return rawCoefficient;
+}
+
+float ComponentTable::readDc(std::ifstream &ifs, const DHT &dcTable, BitStreamBuffer &bsb) {
+    ifs >> bsb;
+    BitStream bs;
+    bs.putWord(bsb, 1);
+    uint8_t output;
+    // Decode n from huffman table
+    while (!dcTable.m_huffmanTable.getCode(bs.getWord(), bs.getLength(), output)) {
+        if (bs.putWord(bsb, 1)) {
+            ifs >> bsb;
+        }
+    }
+    bs.clear();
+    while ((output = bs.putWord(bsb, output))) {
+        ifs >> bsb;
+    }
+    uint16_t rawCoefficient = bs.getWord();
+    bs.clear();
+    return convertToCorrectCoefficient(rawCoefficient, output);
+}
+
+ComponentTable::ACValue ComponentTable::readAc(std::ifstream &ifs, const DHT &acTable, BitStreamBuffer &bsb) {
+    ifs >> bsb;
+    BitStream bs;
+    bs.putWord(bsb, 1);
+    uint8_t output;
+    // Decode n from huffman table
+    while (!acTable.m_huffmanTable.getCode(bs.getWord(), bs.getLength(), output)) {
+        if (bs.putWord(bsb, 1)) {
+            ifs >> bsb;
+        }
+    }
+    ComponentTable::ACValue acValue;
+    if (output == 0x00) {
+        acValue.state = AC_ALL_ZERO;
+    } else if (output == 0xF0) {
+        acValue.state = AC_FOLLOWING_SIXTEEN_ZERO;
+    } else {
+        acValue.state = AC_NORMAL_STATE;
+        acValue.trailingZero = (output >> 4);
+        bs.clear();
+        while ((output = bs.putWord(bsb, (output & 0x0F)))) {
+            ifs >> bsb;
+        }
+        uint16_t rawCoefficient = bs.getWord();
+        bs.clear();
+        acValue.value = convertToCorrectCoefficient(rawCoefficient, output);
+    }
+    return acValue;
+}
+
+ComponentTable::~ComponentTable() {
+    for (int i = 0; i < 8; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            for (int k = 0; k < m_verticalSize; ++k) {
+                delete[] m_table[i][j][k];
+            }
+            delete[] m_table[i][j];
+        }
+    }
+}
+
+void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
+    for (int i = 0; i < jpeg.m_sof0.m_componentSize; ++i) {
+        // HuffmanTable *ac, *dc
+        DHT *dc = jpeg.m_dht[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4];
+        DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0f];
+        if (jpeg.m_mcus.m_lastMcu) {
+            m_component[i].read(ifs, &jpeg.m_mcus.m_lastMcu->m_component[i],
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4),
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f), *dc, *ac, bsb);
+
+        } else {
+            m_component[i].read(ifs, nullptr,
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4),
+                                (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f), *dc, *ac, bsb);
+        }
+    }
+}
+
+std::ostream &operator<<(std::ostream &os, const MCU &data) {
+    for (int i = 0; i < 3; ++i) {
+        os << "=========== Component " << i << " Start =========" << std::endl;
+        os << data.m_component[i];
+        os << "=========== Component " << i << " End =========" << std::endl;
+    }
+    return os;
+}
+
+void MCUS::read(std::ifstream &ifs, const JPEG &jpeg) {
+    // Calculate how many mcu in row and column
+    m_mcuWidth = (jpeg.m_sof0.m_width - 1) / (jpeg.m_sof0.m_maxHorizontalComponent) + 1;
+    m_mcuHeight = (jpeg.m_sof0.m_height - 1) / (jpeg.m_sof0.m_maxVerticalComponent) + 1;
+    m_mcu = new MCU *[m_mcuHeight];
+    BitStreamBuffer bsb;
+    for (int i = 0; i < m_mcuHeight; ++i) {
+        m_mcu[i] = new MCU[m_mcuWidth];
+        for (int j = 0; j < m_mcuWidth; ++j) {
+            m_mcu[i][j].read(ifs, jpeg, bsb);
+            m_lastMcu = &m_mcu[i][j];
+        }
+    }
+}
+
+std::ostream &operator<<(std::ostream &os, const MCUS &data) {
+    for (int i = 0; i < data.m_mcuHeight; ++i) {
+        for (int j = 0; j < data.m_mcuWidth; ++j) {
+            os << "========= MCU (" << i << ", " << j << ") Start ========== " << std::endl;
+            os << data.m_mcu[i][j];
+            os << "========= MCU (" << i << ", " << j << ") End ========== " << std::endl;
+        }
+    }
+    return os;
+}
+
 std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
     char header[3] = {};
     readData(ifs, header, 2);
@@ -311,25 +572,28 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
         exit(1);
     }
     readData(ifs, header, 2);
-    bool isArrivedSOS = false;
     do {
         cout << "[INFO] Header " << hexify(header, 2) << "." << endl;
         if (SOS::checkSegment(header)) {
             ifs >> data.m_sos;
             std::cout << data.m_sos;
-            isArrivedSOS = true;
+            break;
         } else if (DRI::checkSegment(header)) {
             ifs >> data.m_dri;
             std::cout << data.m_dri;
         } else if (DHT::checkSegment(header)) {
-            ifs >> data.m_dht[data.m_dhtSize++];
-            std::cout << data.m_dht[data.m_dhtSize-1];
+            DHT *newDHT = new DHT();
+            ifs >> *newDHT;
+            data.m_dht[newDHT->m_huffmanTable.m_idAndType & 4][data.m_dhtSize[newDHT->m_huffmanTable.m_idAndType &
+                                                                              4]++] = newDHT;
+            std::cout << *data.m_dht[newDHT->m_huffmanTable.m_idAndType & 4][
+                    data.m_dhtSize[newDHT->m_huffmanTable.m_idAndType & 4] - 1];
         } else if (SOF0::checkSegment(header)) {
             ifs >> data.m_sof0;
             std::cout << data.m_sof0;
         } else if (DQT::checkSegment(header)) {
             ifs >> data.m_dqt[data.m_dqtSize++];
-            std::cout << data.m_dqt[data.m_dqtSize-1];
+            std::cout << data.m_dqt[data.m_dqtSize - 1];
 
         } else if (APP0::checkSegment(header)) {
             ifs >> data.m_app0;
@@ -339,44 +603,10 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
             exit(1);
         }
         readData(ifs, header, 2);
-    } while (!isArrivedSOS);
+    } while (true);
 
-    uint8_t buffer;
-    while (ifs >> buffer) {
-        if (buffer == 0xff) {
-            uint8_t indicator;
-            ifs >> indicator;
-            while (indicator == 0xff) {
-                switch (indicator) {
-                    case 0x00: {
-                        data.m_scanData.push_back(buffer);
-                        break;
-                    }
-                    case 0xd9:
-                        goto EOI;
-                    case 0xd0:
-                    case 0xd1:
-                    case 0xd2:
-                    case 0xd3:
-                    case 0xd4:
-                    case 0xd5:
-                    case 0xd6:
-                    case 0xd7:
-                        data.m_rstN = ((data.m_rstN + 1) & 0x7);
-                        break;
-                    default: {
-                        data.m_scanData.push_back(indicator);
-                    }
-
-                }
-                buffer = indicator;
-                ifs >> indicator;
-            }
-        } else {
-            data.m_scanData.push_back(buffer);
-        }
-    }
-    EOI:;
+    data.m_mcus.read(ifs, data);
+    // TODO Read EOI
 }
 
 std::ostream &operator<<(std::ostream &os, const JPEG &data) {
@@ -385,9 +615,19 @@ std::ostream &operator<<(std::ostream &os, const JPEG &data) {
         os << data.m_dqt[i];
     }
     os << data.m_sof0;
-    for (int i = 0; i < data.m_dhtSize; ++i) {
-        os << data.m_dht[i];
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < data.m_dhtSize[i]; ++j) {
+            os << data.m_dht[i][j];
+        }
     }
     os << data.m_dri;
     os << data.m_sos;
+}
+
+JPEG::~JPEG() {
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < m_dhtSize[i]; ++j) {
+            delete m_dht[i][j];
+        }
+    }
 }

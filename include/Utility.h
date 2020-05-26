@@ -43,6 +43,14 @@ std::string hexify(uint16_t a) {
     return hex;
 }
 
+std::string binify(uint16_t a, int length) {
+    std::string bin;
+    for(int i = length - 1;i >= 0;--i) {
+        bin += ((a>>i)&1)?"1":"0";
+    }
+    return bin;
+}
+
 std::string hexify(const char a[], int size) {
     std::string hex("0x");
     for (int i = 0; i < size; ++i) {
