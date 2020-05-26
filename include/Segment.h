@@ -46,14 +46,13 @@ public:
 
     static bool checkSegment(const char header[]);
 
-    DQT() : m_PTq{}, m_qs{} {};
+    DQT() : m_qs(nullptr) {};
 
     ~DQT();
 
     friend std::ifstream &operator>>(std::ifstream &ifs, DQT &data);
 
     friend std::ostream &operator<<(std::ostream &os, const DQT &data);
-
 
     uint8_t m_PTq;
     void *m_qs;
@@ -64,7 +63,6 @@ public:
     friend std::ifstream &operator>>(std::ifstream &ifs, ColorComponent &data);
 
     friend std::ostream &operator<<(std::ostream &os, const ColorComponent &data);
-
 
     uint8_t m_id;
     uint8_t m_sampleFactor;
@@ -80,7 +78,6 @@ public:
     friend std::ifstream &operator>>(std::ifstream &ifs, SOF0 &data);
 
     friend std::ostream &operator<<(std::ostream &os, const SOF0 &data);
-
 
     uint8_t m_precision;
     uint16_t m_height;
@@ -197,11 +194,20 @@ class JPEG;
 
 class ComponentTable {
 public:
-    void read(std::ifstream &ifs, const ComponentTable *lastComponent, uint8_t verticalSize, uint8_t horizontalSize,
-              const DHT &dcTable, const DHT &acTable,
+    void init(uint8_t verticalSize, uint8_t horizontalSize);
+
+    void read(std::ifstream &ifs, const ComponentTable *lastComponent, const DHT &dcTable, const DHT &acTable,
               BitStreamBuffer &bsb);
 
     friend std::ostream &operator<<(std::ostream &os, const ComponentTable &data);
+
+    ComponentTable &operator =(const ComponentTable &table);
+
+    void multiplyWith(const DQT &dqt);
+
+    void replaceWith(const ComponentTable &table, int (*replaceTable)[8]);
+
+    void inPlaceReplaceWith(int (*replaceTable)[8]);
 
     ~ComponentTable();
 
@@ -261,7 +267,7 @@ public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xD8";
     constexpr static char EIO_MARKER_MAGIC_NUMBER[] = "\xFF\xD9";
 
-    JPEG() : m_rstN(0), m_dqtSize(0), m_dhtSize{}, m_dht{} {};
+    JPEG() : m_rstN(0), m_dqt{}, m_dht{} {};
 
     ~JPEG();
 
@@ -270,10 +276,8 @@ public:
     friend std::ostream &operator<<(std::ostream &os, const JPEG &data);
 
     APP0 m_app0;
-    int m_dqtSize;
-    DQT m_dqt[4];
+    DQT *m_dqt[4];
     SOF0 m_sof0;
-    int m_dhtSize[2];
     DHT *m_dht[2][2];
     DRI m_dri;
     SOS m_sos;

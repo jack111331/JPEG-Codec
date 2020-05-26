@@ -5,15 +5,17 @@
 #include "Segment.h"
 #include <fstream>
 #include <iostream>
+#include <Decoder.h>
 
 using namespace std;
 
 int main() {
     JPEG data;
+    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new NaiveDezigzag());
     ifstream ifs("img/gig-sn01.jpg", std::ios::binary);
-    if(ifs.is_open()) {
+    if (ifs.is_open()) {
         ifs >> data;
-        cout << data;
         ifs.close();
+        decoder.precess(data);
     }
 }

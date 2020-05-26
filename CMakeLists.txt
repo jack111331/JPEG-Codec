@@ -13,9 +13,11 @@ set(JPEG_CODEC_HEADER)
 list(APPEND JPEG_CODEC_SOURCE
         main.cpp
         Segment.cpp
+        Decoder.cpp
         )
 list(APPEND JPEG_CODEC_HEADER
         include/Segment.h
+        include/Decoder.h
         include/Utility.h
         )
 
