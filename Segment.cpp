@@ -594,14 +594,15 @@ void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
         // HuffmanTable *ac, *dc
         DHT *dc = jpeg.m_dht[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4];
         DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0f];
+        m_component[i] = new ComponentTable[jpeg.m_sof0.m_componentSize];
         int verticalSize = (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f);
         int horizontalSize =(jpeg.m_sof0.m_component[i].m_sampleFactor >> 4);
-                m_component[i].init(verticalSize, horizontalSize);
+                m_component[i]->init(verticalSize, horizontalSize);
         if (jpeg.m_mcus.m_lastMcu) {
-            m_component[i].read(ifs, jpeg.m_mcus.m_lastMcu->m_component[i].m_table[0][0][verticalSize-1][horizontalSize-1], *dc, *ac, bsb);
+            m_component[i]->read(ifs, jpeg.m_mcus.m_lastMcu->m_component[i]->m_table[0][0][verticalSize-1][horizontalSize-1], *dc, *ac, bsb);
 
         } else {
-            m_component[i].read(ifs, 0, *dc, *ac, bsb);
+            m_component[i]->read(ifs, 0, *dc, *ac, bsb);
         }
     }
 }
@@ -609,7 +610,7 @@ void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
 std::ostream &operator<<(std::ostream &os, const MCU &data) {
     for (int i = 0; i < 3; ++i) {
         os << "=========== Component " << i << " Start =========" << std::endl;
-        os << data.m_component[i];
+        os << *data.m_component[i];
         os << "=========== Component " << i << " End =========" << std::endl;
     }
     return os;

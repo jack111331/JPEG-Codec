@@ -20,7 +20,7 @@ void NaiveDequantization::process(JPEG &jpeg) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
                 const DQT *dqt = jpeg.m_dqt[sof0.m_component[k].m_dqtId];
-                jpeg.m_mcus.m_mcu[i][j].m_component[k].multiplyWith(*dqt);
+                jpeg.m_mcus.m_mcu[i][j].m_component[k]->multiplyWith(*dqt);
             }
         }
     }
@@ -43,10 +43,11 @@ void NaiveDezigzag::process(JPEG &jpeg) {
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
-                ComponentTable componentTable;
-                componentTable.init((sof0.m_component[k].m_sampleFactor & 0x0f),
+                ComponentTable *componentTable = new ComponentTable();
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
                                     (sof0.m_component[k].m_sampleFactor >> 4));
-                componentTable.replaceWith(jpeg.m_mcus.m_mcu[i][j].m_component[k], zigzagTable);
+                componentTable->replaceWith(*jpeg.m_mcus.m_mcu[i][j].m_component[k], zigzagTable);
+                delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
             }
         }
@@ -70,7 +71,7 @@ void EnhancedDezigzag::process(JPEG &jpeg) {
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
-                jpeg.m_mcus.m_mcu[i][j].m_component[k].inPlaceReplaceWith(swapTable);
+                jpeg.m_mcus.m_mcu[i][j].m_component[k]->inPlaceReplaceWith(swapTable);
             }
         }
     }
@@ -93,10 +94,11 @@ void NaiveIDCT::process(JPEG &jpeg) {
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
-                ComponentTable componentTable;
-                componentTable.init((sof0.m_component[k].m_sampleFactor & 0x0f),
+                ComponentTable *componentTable = new ComponentTable();
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
                                     (sof0.m_component[k].m_sampleFactor >> 4));
-                performIdctOnComponentTable(jpeg.m_mcus.m_mcu[i][j].m_component[k], componentTable);
+                performIdctOnComponentTable(*jpeg.m_mcus.m_mcu[i][j].m_component[k], *componentTable);
+                delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
             }
         }
@@ -136,10 +138,11 @@ void DimensionReductionIDCT::process(JPEG &jpeg) {
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
-                ComponentTable componentTable;
-                componentTable.init((sof0.m_component[k].m_sampleFactor & 0x0f),
+                ComponentTable *componentTable = new ComponentTable();
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
                                     (sof0.m_component[k].m_sampleFactor >> 4));
-                performIdctOnComponentTable(jpeg.m_mcus.m_mcu[i][j].m_component[k], componentTable);
+                performIdctOnComponentTable(*jpeg.m_mcus.m_mcu[i][j].m_component[k], *componentTable);
+                delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
             }
         }
@@ -187,7 +190,7 @@ void ImageBlock::FromComponentTable(const ComponentTable &table, int maxVertical
 
 void ImageMCU::fromMCU(const JPEG &jpeg, const MCU &mcu) {
     for (int i = 0; i < jpeg.m_sof0.m_componentSize; ++i) {
-        m_block[i].FromComponentTable(mcu.m_component[i], jpeg.m_sof0.m_maxVerticalComponent,
+        m_block[i].FromComponentTable(*mcu.m_component[i], jpeg.m_sof0.m_maxVerticalComponent,
                                       jpeg.m_sof0.m_maxHorizontalComponent);
     }
 }

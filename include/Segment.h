@@ -240,7 +240,7 @@ public:
 
     friend std::ostream &operator<<(std::ostream &os, const MCU &data);
 
-    ComponentTable m_component[4];
+    ComponentTable *m_component[4];
 
     static constexpr int Y_COMPONENT = 0;
     static constexpr int CB_COMPONENT = 1;
