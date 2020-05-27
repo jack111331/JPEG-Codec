@@ -37,7 +37,7 @@ public:
     virtual void process(JPEG &jpeg) = 0;
 };
 
-class IDCT : public IIDCT {
+class NaiveIDCT : public IIDCT {
 public:
     void process(JPEG &jpeg) override;
 
@@ -68,12 +68,16 @@ public:
 class Image {
 public:
     Image() : m_imcu(nullptr), m_imageBuffer{}, m_storedInBuffer(false) {};
+    ~Image();
     void fromMCUS(const JPEG &jpeg, const MCUS &mcus);
 
     void toPpm(std::ofstream &ofs, const JPEG &jpeg);
-    static uint8_t yCbCrConverter(int component, float y, float cb, float cr);
+    static float yCbCrConverter(int component, float y, float cb, float cr);
+    static uint8_t clamp(float value);
 
     int m_mcuWidth, m_mcuHeight;
+    int m_componentSize;
+    int m_maxVerticalComponent, m_maxHorizontalComponent;
     ImageMCU **m_imcu;
     float **m_imageBuffer[3];
     bool m_storedInBuffer;

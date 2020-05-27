@@ -196,7 +196,7 @@ class ComponentTable {
 public:
     void init(uint8_t verticalSize, uint8_t horizontalSize);
 
-    void read(std::ifstream &ifs, const ComponentTable *lastComponent, const DHT &dcTable, const DHT &acTable,
+    void read(std::ifstream &ifs, float lastComponentDcValue, const DHT &dcTable, const DHT &acTable,
               BitStreamBuffer &bsb);
 
     friend std::ostream &operator<<(std::ostream &os, const ComponentTable &data);

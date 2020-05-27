@@ -53,7 +53,7 @@ void NaiveDezigzag::process(JPEG &jpeg) {
     }
 }
 
-void IDCT::process(JPEG &jpeg) {
+void NaiveIDCT::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
     int mcuHeight = jpeg.m_mcus.m_mcuHeight;
@@ -70,7 +70,7 @@ void IDCT::process(JPEG &jpeg) {
     }
 }
 
-void IDCT::performIdctOnComponentTable(ComponentTable &table, ComponentTable &result) {
+void NaiveIDCT::performIdctOnComponentTable(ComponentTable &table, ComponentTable &result) {
     for (int i = 0; i < 8; ++i) {
         for (int j = 0; j < 8; ++j) {
             for (int k = 0; k < table.m_verticalSize; ++k) {
@@ -83,7 +83,7 @@ void IDCT::performIdctOnComponentTable(ComponentTable &table, ComponentTable &re
 }
 
 float
-IDCT::computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, int horizonComponent, int i, int j) {
+NaiveIDCT::computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, int horizonComponent, int i, int j) {
     float result = 0;
     const double pi = acos(-1);
     for (int x = 0; x < 8; ++x) {
@@ -96,7 +96,7 @@ IDCT::computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, in
     return result * 0.25f;
 }
 
-float IDCT::coefficientPrecompute(int x, int y) {
+float NaiveIDCT::coefficientPrecompute(int x, int y) {
     if (x == 0 && y == 0) {
         return 0.5f;
     } else if (x == 0 || y == 0) {
@@ -138,21 +138,24 @@ void Image::fromMCUS(const JPEG &jpeg, const MCUS &mcus) {
 }
 
 void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
-    ofs << "P3" << endl;
-    ofs << jpeg.m_sof0.m_width << " " << jpeg.m_sof0.m_height << endl;
+    ofs << "P6\n";
+    ofs << jpeg.m_sof0.m_width << " " << jpeg.m_sof0.m_height << "\n";
+    ofs << 255 << "\n";
     if (!m_storedInBuffer) {
-        for (int i = 0; i < (int) jpeg.m_sof0.m_componentSize; ++i) {
-            m_imageBuffer[i] = new float *[m_mcuHeight * 8 * jpeg.m_sof0.m_maxVerticalComponent];
-            for (int j = 0; j < m_mcuHeight * 8 * jpeg.m_sof0.m_maxVerticalComponent; ++j) {
-                m_imageBuffer[i][j] = new float[m_mcuWidth * 8 * jpeg.m_sof0.m_maxHorizontalComponent];
+        m_componentSize = jpeg.m_sof0.m_componentSize;
+        m_maxVerticalComponent = jpeg.m_sof0.m_maxVerticalComponent;
+        m_maxHorizontalComponent = jpeg.m_sof0.m_maxHorizontalComponent;
+        for (int i = 0; i < m_componentSize; ++i) {
+            m_imageBuffer[i] = new float *[m_mcuHeight * 8 * m_maxVerticalComponent];
+            for (int j = 0; j < m_mcuHeight * 8 * m_maxVerticalComponent; ++j) {
+                m_imageBuffer[i][j] = new float[m_mcuWidth * 8 * m_maxHorizontalComponent];
             }
         }
-        for (int i = 0; i < m_mcuHeight * 8 * jpeg.m_sof0.m_maxVerticalComponent; ++i) {
-            for (int j = 0; j < m_mcuWidth * 8 * jpeg.m_sof0.m_maxHorizontalComponent; ++j) {
-                const ImageMCU &imcu = m_imcu[i / (8 * jpeg.m_sof0.m_maxVerticalComponent)][j / (8 *
-                                                                                                 jpeg.m_sof0.m_maxHorizontalComponent)];
-                int tableI = i % (8 * jpeg.m_sof0.m_maxVerticalComponent);
-                int tableJ = j % (8 * jpeg.m_sof0.m_maxHorizontalComponent);
+        for (int i = 0; i < m_mcuHeight * 8 * m_maxVerticalComponent; ++i) {
+            for (int j = 0; j < m_mcuWidth * 8 * m_maxHorizontalComponent; ++j) {
+                const ImageMCU &imcu = m_imcu[i / (8 * m_maxVerticalComponent)][j / (8 * m_maxHorizontalComponent)];
+                int tableI = i % (8 * m_maxVerticalComponent);
+                int tableJ = j % (8 * m_maxHorizontalComponent);
                 float y = imcu.m_block[0].m_table[tableI][tableJ];
                 float cb = imcu.m_block[1].m_table[tableI][tableJ];
                 float cr = imcu.m_block[2].m_table[tableI][tableJ];
@@ -163,24 +166,46 @@ void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
         }
         m_storedInBuffer = true;
     }
-    for (int i = 0; i < m_mcuHeight * 8 * jpeg.m_sof0.m_maxVerticalComponent; ++i) {
-        for (int j = 0; j < m_mcuWidth * 8 * jpeg.m_sof0.m_maxHorizontalComponent; ++j) {
-            for(int k = 0;k < 3;++k) {
-                ofs << m_imageBuffer[k][i][j] << " ";
+    for (int i = 0; i < jpeg.m_sof0.m_height; ++i) {
+        for (int j = 0; j < jpeg.m_sof0.m_width; ++j) {
+            for (int k = 0; k < 3; ++k) {
+                ofs << (clamp(m_imageBuffer[k][i][j]));
             }
         }
-        ofs << endl;
     }
-    ofs << endl;
 }
 
-uint8_t Image::yCbCrConverter(int component, float y, float cb, float cr) {
+float Image::yCbCrConverter(int component, float y, float cb, float cr) {
     if (component == Image::R_COMPONENT) {
         return y + 1.402f * cr + 128.0f;
     } else if (component == Image::G_COMPONENT) {
         return y - 0.71414f * cr - 0.34414f * cb + 128.0f;
     } else {
         return y + 1.772f * cb + 128.0f;
+    }
+}
+
+uint8_t Image::clamp(float value) {
+    if (value > 255) {
+        return 255;
+    } else if (value < 0) {
+        return 0;
+    } else {
+        return (value-((int)value)>=0.5?value+1:value);
+    }
+}
+
+Image::~Image() {
+    for (int i = 0; i < m_mcuHeight; ++i) {
+        delete[] m_imcu[i];
+    }
+    delete[] m_imcu;
+
+    for (int i = 0; i < m_componentSize; ++i) {
+        for (int j = 0; j < m_mcuHeight * 8 * m_maxVerticalComponent; ++j) {
+            delete[] m_imageBuffer[i][j];
+        }
+        delete[] m_imageBuffer[i];
     }
 }
 
@@ -206,20 +231,38 @@ Decoder &Decoder::setUpsampling(Upsampling *upsamplingStrategy) {
 }
 
 void Decoder::precess(JPEG &jpeg) {
+#ifdef DEBUG
+    int lookI = 15, lookJ = 15;
+    cout << "==== Before Process ====" << endl;
+    cout << jpeg.m_mcus.m_mcu[lookI][lookJ];
+#endif
+
     if (!m_dequantization) {
         cout << "[ERROR] Didn't assign dequantization strategy." << endl;
     }
     m_dequantization->process(jpeg);
+#ifdef DEBUG
+    cout << "==== After dequantization ====" << endl;
+    cout << jpeg.m_mcus.m_mcu[lookI][lookJ];
+#endif
 
     if (!m_dezigzag) {
         cout << "[ERROR] Didn't provide de ZIG-ZAG strategy." << endl;
     }
     m_dezigzag->process(jpeg);
+#ifdef DEBUG
+    cout << "==== After dezigzag ====" << endl;
+    cout << jpeg.m_mcus.m_mcu[lookI][lookJ];
+#endif
 
     if (!m_idct) {
         cout << "[ERROR] Didn't provide IDCT strategy." << endl;
     }
     m_idct->process(jpeg);
+#ifdef DEBUG
+    cout << "==== After idct ====" << endl;
+    cout << jpeg.m_mcus.m_mcu[lookI][lookJ];
+#endif
 
     if (!m_upsampling) {
         cout << "[ERROR] Didn't provide Upsampling strategy." << endl;
