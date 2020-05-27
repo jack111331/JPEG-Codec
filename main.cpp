@@ -12,7 +12,7 @@ using namespace std;
 
 int main() {
     JPEG data;
-    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new NaiveDezigzag()).setIDCT(
+    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new EnhancedDezigzag()).setIDCT(
             new NaiveIDCT()).setUpsampling(new NaiveUpsampling());
     ifstream ifs("img/gig-sn01.jpg", std::ios::binary);
     if (ifs.is_open()) {

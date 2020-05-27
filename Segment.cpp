@@ -498,15 +498,15 @@ void ComponentTable::replaceWith(const ComponentTable &table, int (*replaceTable
     }
 }
 
-void ComponentTable::inPlaceReplaceWith(int (*replaceTable)[8]) {
+void ComponentTable::inPlaceReplaceWith(int (*swapTable)[8]) {
     for (int i = 0; i < 8; ++i) {
         for (int j = 0; j < 8; ++j) {
-            int replacePosition = replaceTable[i][j];
+            int swapPosition = swapTable[i][j];
             for (int k = 0; k < m_verticalSize; ++k) {
                 for (int l = 0; l < m_horizontalSize; ++l) {
                     float value = m_table[i][j][k][l];
-                    m_table[i][j][k][l] = m_table[replacePosition >> 3][replacePosition & 0x7][k][l];
-                    m_table[replacePosition >> 3][replacePosition & 0x7][k][l] = value;
+                    m_table[i][j][k][l] = m_table[swapPosition >> 3][swapPosition & 0x7][k][l];
+                    m_table[swapPosition >> 3][swapPosition & 0x7][k][l] = value;
                 }
             }
         }

@@ -53,6 +53,29 @@ void NaiveDezigzag::process(JPEG &jpeg) {
     }
 }
 
+void EnhancedDezigzag::process(JPEG &jpeg) {
+    int swapTable[8][8] = {
+            {0,  1,  5,  6,  14, 15, 27, 28},
+            {15, 14, 28, 13, 16, 26, 29, 42},
+            {27, 42, 27, 42, 25, 30, 41, 43},
+            {29, 26, 27, 29, 31, 40, 44, 53},
+            {53, 42, 43, 53, 39, 45, 52, 54},
+            {40, 41, 42, 52, 46, 51, 55, 60},
+            {55, 52, 51, 60, 60, 56, 59, 61},
+            {56, 59, 61, 60, 60, 61, 62, 63}
+    };
+    const SOF0 &sof0 = jpeg.m_sof0;
+    int mcuWidth = jpeg.m_mcus.m_mcuWidth;
+    int mcuHeight = jpeg.m_mcus.m_mcuHeight;
+    for (int i = 0; i < mcuHeight; ++i) {
+        for (int j = 0; j < mcuWidth; ++j) {
+            for (int k = 0; k < sof0.m_componentSize; ++k) {
+                jpeg.m_mcus.m_mcu[i][j].m_component[k].inPlaceReplaceWith(swapTable);
+            }
+        }
+    }
+}
+
 void NaiveIDCT::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
@@ -191,7 +214,7 @@ uint8_t Image::clamp(float value) {
     } else if (value < 0) {
         return 0;
     } else {
-        return (value-((int)value)>=0.5?value+1:value);
+        return (value - ((int) value) >= 0.5 ? value + 1 : value);
     }
 }
 

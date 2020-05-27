@@ -207,7 +207,7 @@ public:
 
     void replaceWith(const ComponentTable &table, int (*replaceTable)[8]);
 
-    void inPlaceReplaceWith(int (*replaceTable)[8]);
+    void inPlaceReplaceWith(int (*swapTable)[8]);
 
     ~ComponentTable();
 
