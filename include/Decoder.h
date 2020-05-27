@@ -7,27 +7,27 @@
 
 #include "Segment.h"
 
-class Dequantization {
+class IDequantization {
 public:
     virtual void process(JPEG &jpeg) = 0;
 };
 
-class NaiveDequantization : public Dequantization {
+class NaiveDequantization : public IDequantization {
 public:
     void process(JPEG &jpeg) override;
 };
 
-class Dezigzag {
+class IDezigzag {
 public:
     virtual void process(JPEG &jpeg) = 0;
 };
 
-class NaiveDezigzag : public Dezigzag {
+class NaiveDezigzag : public IDezigzag {
 public:
     void process(JPEG &jpeg) override;
 };
 
-class EnhancedDezigzag : public Dezigzag {
+class EnhancedDezigzag : public IDezigzag {
 public:
     void process(JPEG &jpeg) override;
 };
@@ -35,6 +35,8 @@ public:
 class IIDCT {
 public:
     virtual void process(JPEG &jpeg) = 0;
+protected:
+    float coefficientPrecompute(int x, int y);
 };
 
 class NaiveIDCT : public IIDCT {
@@ -46,7 +48,15 @@ private:
 
     float computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, int horizonComponent, int i, int j);
 
-    float coefficientPrecompute(int x, int y);
+};
+
+class DimensionReductionIDCT : public IIDCT {
+public:
+    void process(JPEG &jpeg) override;
+
+private:
+    void performIdctOnComponentTable(ComponentTable &table, ComponentTable &result);
+
 };
 
 class ImageBlock {
@@ -101,9 +111,9 @@ class Decoder {
 public:
     Decoder() : m_dequantization(nullptr), m_dezigzag(nullptr) {};
 
-    Decoder &setDequantization(Dequantization *dequantizationStrategy);
+    Decoder &setDequantization(IDequantization *dequantizationStrategy);
 
-    Decoder &setDezigzag(Dezigzag *dezigzagStrategy);
+    Decoder &setDezigzag(IDezigzag *dezigzagStrategy);
 
     Decoder &setIDCT(IIDCT *idctStrategy);
 
@@ -112,8 +122,8 @@ public:
     void precess(JPEG &jpeg);
 
 private:
-    Dequantization *m_dequantization;
-    Dezigzag *m_dezigzag;
+    IDequantization *m_dequantization;
+    IDezigzag *m_dezigzag;
     IIDCT *m_idct;
     Upsampling *m_upsampling;
 };

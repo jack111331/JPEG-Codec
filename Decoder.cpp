@@ -76,6 +76,16 @@ void EnhancedDezigzag::process(JPEG &jpeg) {
     }
 }
 
+float IIDCT::coefficientPrecompute(int x, int y) {
+    if (x == 0 && y == 0) {
+        return 0.5f;
+    } else if (x == 0 || y == 0) {
+        return 1 / sqrt(2);
+    } else {
+        return 1.0f;
+    }
+}
+
 void NaiveIDCT::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
@@ -119,13 +129,47 @@ NaiveIDCT::computeCoefficientAtIndex(ComponentTable &table, int verticalComponen
     return result * 0.25f;
 }
 
-float NaiveIDCT::coefficientPrecompute(int x, int y) {
-    if (x == 0 && y == 0) {
-        return 0.5f;
-    } else if (x == 0 || y == 0) {
-        return 1 / sqrt(2);
-    } else {
-        return 1.0f;
+void DimensionReductionIDCT::process(JPEG &jpeg) {
+    const SOF0 &sof0 = jpeg.m_sof0;
+    int mcuWidth = jpeg.m_mcus.m_mcuWidth;
+    int mcuHeight = jpeg.m_mcus.m_mcuHeight;
+    for (int i = 0; i < mcuHeight; ++i) {
+        for (int j = 0; j < mcuWidth; ++j) {
+            for (int k = 0; k < sof0.m_componentSize; ++k) {
+                ComponentTable componentTable;
+                componentTable.init((sof0.m_component[k].m_sampleFactor & 0x0f),
+                                    (sof0.m_component[k].m_sampleFactor >> 4));
+                performIdctOnComponentTable(jpeg.m_mcus.m_mcu[i][j].m_component[k], componentTable);
+                jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
+            }
+        }
+    }
+}
+
+void DimensionReductionIDCT::performIdctOnComponentTable(ComponentTable &table, ComponentTable &result) {
+    const double pi = acos(-1);
+    float precompute[8][8];
+    for (int k = 0; k < table.m_verticalSize; ++k) {
+        for (int l = 0; l < table.m_horizontalSize; ++l) {
+            for (int j = 0; j < 8; ++j) {
+                for (int x = 0; x < 8; ++x) {
+                    precompute[j][x] = (1 / sqrt(2)) * cos(0) * table.m_table[x][0][k][l];
+                    for (int y = 1; y < 8; ++y) {
+                        precompute[j][x] += cos(0.0625f * (j * 2 + 1) * y * pi) * table.m_table[x][y][k][l];
+                    }
+                }
+            }
+            for (int i = 0; i < 8; ++i) {
+                for (int j = 0; j < 8; ++j) {
+                    float resultValue = (1 / sqrt(2)) * cos(0) * precompute[j][0];
+                    for (int x = 1; x < 8; ++x) {
+                        // TODO computeCoefficientAtIndex can be precompute to table lookup
+                        resultValue += cos(0.0625f * (i * 2 + 1) * x * pi) * precompute[j][x];
+                    }
+                    result.m_table[i][j][k][l] = resultValue * 0.25f;
+                }
+            }
+        }
     }
 }
 
@@ -237,11 +281,11 @@ void NaiveUpsampling::process(JPEG &jpeg) {
     jpeg.m_image->fromMCUS(jpeg, jpeg.m_mcus);
 }
 
-Decoder &Decoder::setDequantization(Dequantization *dequantizationStrategy) {
+Decoder &Decoder::setDequantization(IDequantization *dequantizationStrategy) {
     m_dequantization = dequantizationStrategy;
 }
 
-Decoder &Decoder::setDezigzag(Dezigzag *dezigzagStrategy) {
+Decoder &Decoder::setDezigzag(IDezigzag *dezigzagStrategy) {
     m_dezigzag = dezigzagStrategy;
 }
 
