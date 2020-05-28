@@ -55,7 +55,7 @@ public:
     void process(JPEG &jpeg) override;
 
 private:
-    void performIdctOnComponentTable(ComponentTable &table, ComponentTable &result);
+    static void performIdctOnComponentTable(ComponentTable &table, ComponentTable &result);
 
 };
 

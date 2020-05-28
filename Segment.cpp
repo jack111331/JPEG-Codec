@@ -23,9 +23,6 @@ constexpr char JPEG::EIO_MARKER_MAGIC_NUMBER[];
 constexpr int ComponentTable::AC_ALL_ZERO;
 constexpr int ComponentTable::AC_FOLLOWING_SIXTEEN_ZERO;
 constexpr int ComponentTable::AC_NORMAL_STATE;
-constexpr int MCU::Y_COMPONENT;
-constexpr int MCU::CB_COMPONENT;
-constexpr int MCU::CR_COMPONENT;
 constexpr int JPEG::AC_COMPONENT;
 constexpr int JPEG::DC_COMPONENT;
 
@@ -73,8 +70,8 @@ std::ifstream &operator>>(std::ifstream &ifs, APP0 &data) {
 
 std::ostream &operator<<(std::ostream &os, const APP0 &data) {
     os << "========= APP0 Start ========== " << std::endl;
-    os << "Major Version: " << hexify((uint8_t) (data.m_version >> 8)) << std::endl;
-    os << "Minor Version: " << hexify((uint8_t) (data.m_version & 0xff)) << std::endl;
+    os << "Major Version: " << hexify((uint8_t) (data.m_version >> 8u)) << std::endl;
+    os << "Minor Version: " << hexify((uint8_t) (data.m_version & 0xffu)) << std::endl;
     os << "Density Unit: " << hexify(data.m_densityUnit) << std::endl;
     os << "X Density: " << hexify(data.m_xDensity) << std::endl;
     os << "Y Density: " << hexify(data.m_yDensity) << std::endl;
@@ -85,9 +82,8 @@ std::ostream &operator<<(std::ostream &os, const APP0 &data) {
 }
 
 APP0::~APP0() {
-    if (m_thumbnailData) {
-        delete[] m_thumbnailData;
-    }
+    delete[] m_thumbnailData;
+
 }
 
 bool DQT::checkSegment(const char header[]) {
@@ -101,16 +97,16 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
     // Precision and id
     ifs >> data.m_PTq;
     // Quantization table
-    data.m_qs = (data.m_PTq & 0xf0) ? (void *) (new uint16_t[64])
+    data.m_qs = (data.m_PTq & 0xf0u) ? (void *) (new uint16_t[64])
                                     : (void *) (new uint8_t[64]);
     for (int i = 0; i < 64; ++i) {
-        if ((data.m_PTq & 0xf0)) {
+        if ((data.m_PTq & 0xf0u)) {
             ifs >> ((uint16_t *) data.m_qs)[i];
         } else {
             ifs >> ((uint8_t *) data.m_qs)[i];
         }
     }
-    length -= 1 + 64 * ((data.m_PTq & 0xf0) + 1);
+    length -= 1 + 64 * ((data.m_PTq & 0xf0u) + 1);
     assert(length == 0);
 
     return ifs;
@@ -118,11 +114,11 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
 
 std::ostream &operator<<(std::ostream &os, const DQT &data) {
     os << "========= DQT Start ========== " << std::endl;
-    os << "Precision: " << (data.m_PTq >> 4) << std::endl;
-    os << "ID: " << (data.m_PTq & 0x0f) << std::endl;
+    os << "Precision: " << (data.m_PTq >> 4u) << std::endl;
+    os << "ID: " << (data.m_PTq & 0x0fu) << std::endl;
     os << "Quantization Table Content: " << std::endl;
     for (int j = 0; j < 64; ++j) {
-        if ((data.m_PTq & 0xf0)) {
+        if ((data.m_PTq & 0xf0u)) {
             os << hexify(((uint16_t *) data.m_qs)[j]) << " ";
         } else {
             os << hexify(((uint8_t *) data.m_qs)[j]) << " ";
@@ -136,7 +132,7 @@ std::ostream &operator<<(std::ostream &os, const DQT &data) {
 }
 
 DQT::~DQT() {
-    if ((m_PTq & 0xf0)) {
+    if ((m_PTq & 0xf0u)) {
         delete[] (uint16_t *) m_qs;
     } else {
         delete[] (uint8_t *) m_qs;
@@ -172,13 +168,13 @@ std::ifstream &operator>>(std::ifstream &ifs, SOF0 &data) {
     ifs >> data.m_componentSize;
     data.m_maxHorizontalComponent = data.m_maxVerticalComponent = 0;
     for (int i = 0; i < (int) data.m_componentSize; ++i) {
-        ColorComponent colorComponent;
+        ColorComponent colorComponent{};
         ifs >> colorComponent;
         data.m_component[colorComponent.m_id - 1] = colorComponent;
         data.m_maxHorizontalComponent = std::max(data.m_maxHorizontalComponent,
-                                                 (uint8_t) (data.m_component[i].m_sampleFactor >> 4));
+                                                 (uint8_t) (data.m_component[i].m_sampleFactor >> 4u));
         data.m_maxVerticalComponent = std::max(data.m_maxVerticalComponent,
-                                               (uint8_t) (data.m_component[i].m_sampleFactor & 0x0f));
+                                               (uint8_t) (data.m_component[i].m_sampleFactor & 0x0fu));
     }
     length -= 6 + data.m_componentSize * sizeof(ColorComponent);
     assert(length == 0);
@@ -207,7 +203,7 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
         ifs >> data.m_codeAmountOfBit[i];
         data.m_length += data.m_codeAmountOfBit[i];
         if (data.m_codeAmountOfBit[i]) {
-            data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1);
+            data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1u);
             data.m_codeword[i] = new uint8_t[data.m_codeAmountOfBit[i]];
         }
     }
@@ -220,15 +216,15 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
 }
 
 std::ostream &operator<<(std::ostream &os, const HuffmanTable &data) {
-    os << "D/AC: " << ((data.m_typeAndId >> 4) ? "AC" : "DC") << std::endl;
-    os << "ID: " << (data.m_typeAndId & 0x0f) << std::endl;
+    os << "D/AC: " << ((data.m_typeAndId >> 4u) ? "AC" : "DC") << std::endl;
+    os << "ID: " << (data.m_typeAndId & 0x0fu) << std::endl;
     uint16_t codeword = 0;
     for (int i = 1; i <= 16; ++i) {
         for (int j = 0; j < data.m_codeAmountOfBit[i]; ++j) {
             os << binify(codeword, i) << " " << hexify(data.m_codeword[i][j]) << std::endl;
             codeword++;
         }
-        codeword <<= 1;
+        codeword <<= 1u;
     }
     return os;
 }
@@ -304,8 +300,8 @@ std::ifstream &operator>>(std::ifstream &ifs, DHTComponent &data) {
 
 std::ostream &operator<<(std::ostream &os, const DHTComponent &data) {
     os << "Component ID: " << hexify(data.m_id) << std::endl;
-    os << "Use DC Table id: " << (data.m_dcac >> 4) << std::endl;
-    os << "Use AC Table id: " << (data.m_dcac & 0x0f) << std::endl;
+    os << "Use DC Table id: " << (data.m_dcac >> 4u) << std::endl;
+    os << "Use AC Table id: " << (data.m_dcac & 0x0fu) << std::endl;
     return os;
 }
 
@@ -319,7 +315,7 @@ std::ifstream &operator>>(std::ifstream &ifs, SOS &data) {
 
     ifs >> data.m_componentSize;
     for (int i = 0; i < data.m_componentSize; ++i) {
-        DHTComponent dhtComponent;
+        DHTComponent dhtComponent{};
         ifs >> dhtComponent;
         data.m_component[dhtComponent.m_id - 1] = dhtComponent;
     }
@@ -404,24 +400,24 @@ void ComponentTable::read(std::ifstream &ifs, float lastComponentDcValue, const 
                 switch (acValue.state) {
                     case AC_ALL_ZERO : {
                         while (count < 64) {
-                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            m_table[count >> 3u][count & 0x07u][i][j] = 0.0;
                             ++count;
                         }
                         break;
                     }
                     case AC_FOLLOWING_SIXTEEN_ZERO : {
                         for (int k = 0; k < 16; ++k) {
-                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            m_table[count >> 3u][count & 0x07u][i][j] = 0.0;
                             ++count;
                         }
                         break;
                     }
                     case AC_NORMAL_STATE : {
                         for (int k = 0; k < acValue.trailingZero; ++k) {
-                            m_table[count >> 3][count & 0x07][i][j] = 0.0;
+                            m_table[count >> 3u][count & 0x07u][i][j] = 0.0;
                             ++count;
                         }
-                        m_table[count >> 3][count & 0x07][i][j] = acValue.value;
+                        m_table[count >> 3u][count & 0x07u][i][j] = acValue.value;
                         ++count;
                         break;
                     }
@@ -447,20 +443,8 @@ std::ostream &operator<<(std::ostream &os, const ComponentTable &data) {
     return os;
 }
 
-ComponentTable &ComponentTable::operator=(const ComponentTable &table) {
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < 8; ++j) {
-            for (int k = 0; k < m_verticalSize; ++k) {
-                for (int l = 0; l < m_horizontalSize; ++l) {
-                    m_table[i][j][k][l] = table.m_table[i][j][k][l];
-                }
-            }
-        }
-    }
-}
-
 void ComponentTable::multiplyWith(const DQT &dqt) {
-    if ((dqt.m_PTq >> 4)) {
+    if ((dqt.m_PTq >> 4u)) {
         const uint16_t *dqtTable = reinterpret_cast<uint16_t *>(dqt.m_qs);
         for (int i = 0; i < 8; ++i) {
             for (int j = 0; j < 8; ++j) {
@@ -490,8 +474,8 @@ void ComponentTable::replaceWith(const ComponentTable &table, int (*replaceTable
         for (int j = 0; j < 8; ++j) {
             for (int k = 0; k < m_verticalSize; ++k) {
                 for (int l = 0; l < m_horizontalSize; ++l) {
-                    int replacePosition = replaceTable[i][j];
-                    m_table[i][j][k][l] = table.m_table[replacePosition >> 3][replacePosition & 0x7][k][l];
+                    uint8_t replacePosition = replaceTable[i][j];
+                    m_table[i][j][k][l] = table.m_table[replacePosition >> 3u][replacePosition & 0x7u][k][l];
                 }
             }
         }
@@ -501,12 +485,12 @@ void ComponentTable::replaceWith(const ComponentTable &table, int (*replaceTable
 void ComponentTable::inPlaceReplaceWith(int (*swapTable)[8]) {
     for (int i = 0; i < 8; ++i) {
         for (int j = 0; j < 8; ++j) {
-            int swapPosition = swapTable[i][j];
+            uint8_t swapPosition = swapTable[i][j];
             for (int k = 0; k < m_verticalSize; ++k) {
                 for (int l = 0; l < m_horizontalSize; ++l) {
                     float value = m_table[i][j][k][l];
-                    m_table[i][j][k][l] = m_table[swapPosition >> 3][swapPosition & 0x7][k][l];
-                    m_table[swapPosition >> 3][swapPosition & 0x7][k][l] = value;
+                    m_table[i][j][k][l] = m_table[swapPosition >> 3u][swapPosition & 0x7u][k][l];
+                    m_table[swapPosition >> 3u][swapPosition & 0x7u][k][l] = value;
                 }
             }
         }
@@ -557,15 +541,15 @@ ComponentTable::ACValue ComponentTable::readAc(std::ifstream &ifs, const DHT &ac
             ifs >> bsb;
         }
     }
-    ComponentTable::ACValue acValue;
+    ComponentTable::ACValue acValue{};
     if (output == 0x00) {
         acValue.state = AC_ALL_ZERO;
     } else if (output == 0xF0) {
         acValue.state = AC_FOLLOWING_SIXTEEN_ZERO;
     } else {
         acValue.state = AC_NORMAL_STATE;
-        acValue.trailingZero = (output >> 4);
-        output = (output & 0x0F);
+        acValue.trailingZero = (output >> 4u);
+        output = (output & 0x0Fu);
         int readLength = output;
         bs.clear();
         while ((output = bs.putWord(bsb, output))) {
@@ -592,14 +576,17 @@ ComponentTable::~ComponentTable() {
 void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
     for (int i = 0; i < jpeg.m_sof0.m_componentSize; ++i) {
         // HuffmanTable *ac, *dc
-        DHT *dc = jpeg.m_dht[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4];
-        DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0f];
+        DHT *dc = jpeg.m_dht[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4u];
+        DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0fu];
         m_component[i] = new ComponentTable[jpeg.m_sof0.m_componentSize];
-        int verticalSize = (jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0f);
-        int horizontalSize =(jpeg.m_sof0.m_component[i].m_sampleFactor >> 4);
-                m_component[i]->init(verticalSize, horizontalSize);
+        int verticalSize = static_cast<int>(jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0fu);
+        int horizontalSize = (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4u);
+        m_component[i]->init(verticalSize, horizontalSize);
         if (jpeg.m_mcus.m_lastMcu) {
-            m_component[i]->read(ifs, jpeg.m_mcus.m_lastMcu->m_component[i]->m_table[0][0][verticalSize-1][horizontalSize-1], *dc, *ac, bsb);
+            m_component[i]->read(ifs,
+                                 jpeg.m_mcus.m_lastMcu->m_component[i]->m_table[0][0][verticalSize - 1][horizontalSize -
+                                                                                                        1], *dc, *ac,
+                                 bsb);
 
         } else {
             m_component[i]->read(ifs, 0, *dc, *ac, bsb);
@@ -667,7 +654,7 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
         } else if (DHT::checkSegment(header)) {
             DHT *newDHT = new DHT();
             ifs >> *newDHT;
-            data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4][newDHT->m_huffmanTable.m_typeAndId & 0x0f] = newDHT;
+            data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4u][newDHT->m_huffmanTable.m_typeAndId & 0x0fu] = newDHT;
 #ifdef DEBUG
             std::cout
                     << *data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4][newDHT->m_huffmanTable.m_typeAndId &
@@ -681,7 +668,7 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
         } else if (DQT::checkSegment(header)) {
             DQT *newDQT = new DQT();
             ifs >> *newDQT;
-            data.m_dqt[(newDQT->m_PTq & 0x0f)] = newDQT;
+            data.m_dqt[(newDQT->m_PTq & 0x0fu)] = newDQT;
 #ifdef DEBUG
             std::cout << *data.m_dqt[(newDQT->m_PTq & 0x0f)];
 #endif

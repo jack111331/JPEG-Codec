@@ -201,8 +201,6 @@ public:
 
     friend std::ostream &operator<<(std::ostream &os, const ComponentTable &data);
 
-    ComponentTable &operator =(const ComponentTable &table);
-
     void multiplyWith(const DQT &dqt);
 
     void replaceWith(const ComponentTable &table, int (*replaceTable)[8]);
@@ -241,10 +239,6 @@ public:
     friend std::ostream &operator<<(std::ostream &os, const MCU &data);
 
     ComponentTable *m_component[4];
-
-    static constexpr int Y_COMPONENT = 0;
-    static constexpr int CB_COMPONENT = 1;
-    static constexpr int CR_COMPONENT = 2;
 
 };
 

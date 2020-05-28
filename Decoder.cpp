@@ -44,8 +44,8 @@ void NaiveDezigzag::process(JPEG &jpeg) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
                 ComponentTable *componentTable = new ComponentTable();
-                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
-                                    (sof0.m_component[k].m_sampleFactor >> 4));
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0fu),
+                                     (sof0.m_component[k].m_sampleFactor >> 4u));
                 componentTable->replaceWith(*jpeg.m_mcus.m_mcu[i][j].m_component[k], zigzagTable);
                 delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
@@ -95,8 +95,8 @@ void NaiveIDCT::process(JPEG &jpeg) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
                 ComponentTable *componentTable = new ComponentTable();
-                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
-                                    (sof0.m_component[k].m_sampleFactor >> 4));
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0fu),
+                                     (sof0.m_component[k].m_sampleFactor >> 4u));
                 performIdctOnComponentTable(*jpeg.m_mcus.m_mcu[i][j].m_component[k], *componentTable);
                 delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
@@ -139,8 +139,8 @@ void DimensionReductionIDCT::process(JPEG &jpeg) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
                 ComponentTable *componentTable = new ComponentTable();
-                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0f),
-                                    (sof0.m_component[k].m_sampleFactor >> 4));
+                componentTable->init((sof0.m_component[k].m_sampleFactor & 0x0fu),
+                                     (sof0.m_component[k].m_sampleFactor >> 4u));
                 performIdctOnComponentTable(*jpeg.m_mcus.m_mcu[i][j].m_component[k], *componentTable);
                 delete jpeg.m_mcus.m_mcu[i][j].m_component[k];
                 jpeg.m_mcus.m_mcu[i][j].m_component[k] = componentTable;
@@ -238,8 +238,8 @@ void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
     }
     for (int i = 0; i < jpeg.m_sof0.m_height; ++i) {
         for (int j = 0; j < jpeg.m_sof0.m_width; ++j) {
-            for (int k = 0; k < 3; ++k) {
-                ofs << (clamp(m_imageBuffer[k][i][j]));
+            for (auto &k : m_imageBuffer) {
+                ofs << (clamp(k[i][j]));
             }
         }
     }
@@ -261,7 +261,7 @@ uint8_t Image::clamp(float value) {
     } else if (value < 0) {
         return 0;
     } else {
-        return (value - ((int) value) >= 0.5 ? value + 1 : value);
+        return (value - ((int)value) >= 0.5 ? value + 1 : value);
     }
 }
 
