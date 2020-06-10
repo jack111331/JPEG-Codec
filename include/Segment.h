@@ -40,13 +40,26 @@ public:
     Color *m_thumbnailData;
 };
 
+class COM {
+public:
+    constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xFE";
+
+    static bool checkSegment(const char header[]);
+
+    friend std::ifstream &operator>>(std::ifstream &ifs, COM &data);
+
+    friend std::ostream &operator<<(std::ostream &os, const COM &data);
+
+    std::string m_comment;
+};
+
 class DQT {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xDB";
 
     static bool checkSegment(const char header[]);
 
-    DQT() : m_qs(nullptr) {};
+    DQT() : m_qs{}, m_PTq{} {};
 
     ~DQT();
 
@@ -54,8 +67,8 @@ public:
 
     friend std::ostream &operator<<(std::ostream &os, const DQT &data);
 
-    uint8_t m_PTq;
-    void *m_qs;
+    uint8_t m_PTq[4];
+    void *m_qs[4];
 };
 
 class ColorComponent {
@@ -116,13 +129,17 @@ public:
 
 class HuffmanTable {
 public:
-    HuffmanTable() : m_length(0), m_codeword{}, m_table{} {};
+    HuffmanTable() : m_length(0), m_codeword{}, m_table{}, m_codeAmountOfBit{} {};
 
     ~HuffmanTable();
 
     friend std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data);
 
     friend std::ostream &operator<<(std::ostream &os, const HuffmanTable &data);
+
+    uint8_t getType() const;
+
+    uint8_t getId() const;
 
     int getTableLength() const;
 
@@ -140,13 +157,17 @@ class DHT {
 public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xC4";
 
+    DHT() : m_huffmanTable{} {};
+
+    ~DHT();
+
     static bool checkSegment(const char header[]);
 
     friend std::ifstream &operator>>(std::ifstream &ifs, DHT &data);
 
     friend std::ostream &operator<<(std::ostream &os, const DHT &data);
 
-    HuffmanTable m_huffmanTable;
+    HuffmanTable *m_huffmanTable[2][2];
 };
 
 class DRI {
@@ -196,12 +217,12 @@ class ComponentTable {
 public:
     void init(uint8_t verticalSize, uint8_t horizontalSize);
 
-    void read(std::ifstream &ifs, float lastComponentDcValue, const DHT &dcTable, const DHT &acTable,
+    void read(std::ifstream &ifs, float lastComponentDcValue, const HuffmanTable &dcTable, const HuffmanTable &acTable,
               BitStreamBuffer &bsb);
 
     friend std::ostream &operator<<(std::ostream &os, const ComponentTable &data);
 
-    void multiplyWith(const DQT &dqt);
+    void multiplyWith(const DQT &dqt, int tableIndex);
 
     void replaceWith(const ComponentTable &table, int (*replaceTable)[8]);
 
@@ -216,7 +237,7 @@ public:
 private:
     static float convertToCorrectCoefficient(uint16_t rawCoefficient, int length);
 
-    float readDc(std::ifstream &ifs, const DHT &dcTable, BitStreamBuffer &bsb);
+    float readDc(std::ifstream &ifs, const HuffmanTable &dcTable, BitStreamBuffer &bsb);
 
     struct ACValue {
         int state;
@@ -224,7 +245,7 @@ private:
         float value;
     };
 
-    ACValue readAc(std::ifstream &ifs, const DHT &acTable, BitStreamBuffer &bsb);
+    ACValue readAc(std::ifstream &ifs, const HuffmanTable &acTable, BitStreamBuffer &bsb);
 
     static constexpr int AC_ALL_ZERO = 0;
     static constexpr int AC_FOLLOWING_SIXTEEN_ZERO = 1;
@@ -263,7 +284,7 @@ public:
     constexpr static char MARKER_MAGIC_NUMBER[] = "\xFF\xD8";
     constexpr static char EIO_MARKER_MAGIC_NUMBER[] = "\xFF\xD9";
 
-    JPEG() : m_rstN(0), m_dqt{}, m_dht{}, m_image(nullptr) {};
+    JPEG() : m_rstN(0), m_image(nullptr) {};
 
     ~JPEG();
 
@@ -272,9 +293,10 @@ public:
     friend std::ostream &operator<<(std::ostream &os, const JPEG &data);
 
     APP0 m_app0;
-    DQT *m_dqt[4];
+    COM m_com;
+    DQT m_dqt;
     SOF0 m_sof0;
-    DHT *m_dht[2][2];
+    DHT m_dht;
     DRI m_dri;
     SOS m_sos;
     uint8_t m_rstN;

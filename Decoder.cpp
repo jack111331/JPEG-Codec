@@ -20,8 +20,7 @@ void NaiveDequantization::process(JPEG &jpeg) {
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
-                const DQT *dqt = jpeg.m_dqt[sof0.m_component[k].m_dqtId];
-                jpeg.m_mcus.m_mcu[i][j].m_component[k]->multiplyWith(*dqt);
+                jpeg.m_mcus.m_mcu[i][j].m_component[k]->multiplyWith(jpeg.m_dqt, sof0.m_component[k].m_dqtId);
             }
         }
     }

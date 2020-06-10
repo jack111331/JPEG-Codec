@@ -2,23 +2,24 @@
 // Created by Edge on 2020/5/11.
 //
 
+//#define DEBUG
+
 #include "Segment.h"
 #include <iostream>
 #include <Decoder.h>
 #include <string>
-//#define DEBUG
 
 using namespace std;
 
-string image_list[1] = {
-//        "img/gig-sn01.jpg",
-        "img/gig-sn08.jpg"//,
-//        "img/monalisa.jpg",
-//        "img/teatime.jpg"
+string image_list[4] = {
+        "img/gig-sn01.jpg",
+        "img/gig-sn08.jpg",
+        "img/monalisa.jpg",
+        "img/teatime.jpg"
 };
 
 int main() {
-    for(int i = 0;i < 1;++i) {
+    for(int i = 0;i < 4;++i) {
         JPEG data;
         Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new EnhancedDezigzag()).setIDCT(
                 new DimensionReductionIDCT()).setUpsampling(new NaiveUpsampling());

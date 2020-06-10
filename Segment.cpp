@@ -6,6 +6,7 @@
 #include <Utility.h>
 #include <cassert>
 #include "Segment.h"
+#include "Decoder.h"
 
 using std::ifstream;
 using std::cout;
@@ -13,6 +14,7 @@ using std::endl;
 
 constexpr char APP0::MARKER_MAGIC_NUMBER[];
 constexpr char APP0::IDENTIFIER_MAGIC_NUMBER[];
+constexpr char COM::MARKER_MAGIC_NUMBER[];
 constexpr char DQT::MARKER_MAGIC_NUMBER[];
 constexpr char SOF0::MARKER_MAGIC_NUMBER[];
 constexpr char DHT::MARKER_MAGIC_NUMBER[];
@@ -83,7 +85,29 @@ std::ostream &operator<<(std::ostream &os, const APP0 &data) {
 
 APP0::~APP0() {
     delete[] m_thumbnailData;
+}
 
+bool COM::checkSegment(const char header[]) {
+    return checkData(header, COM::MARKER_MAGIC_NUMBER, sizeof(COM::MARKER_MAGIC_NUMBER));
+}
+
+std::ifstream &operator>>(std::ifstream &ifs, COM &data) {
+    uint16_t length;
+    ifs >> length;
+    length -= 2;
+    char *comment = new char[length + 1];
+    ifs.read(comment, length);
+    comment[length] = 0;
+    data.m_comment = comment;
+    delete[] comment;
+    return ifs;
+}
+
+std::ostream &operator<<(std::ostream &os, const COM &data) {
+    os << "========= COM Start ========== " << std::endl;
+    os << "Comment: " << data.m_comment << std::endl;
+    os << "========= COM End ========== " << std::endl;
+    return os;
 }
 
 bool DQT::checkSegment(const char header[]) {
@@ -94,19 +118,24 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
     uint16_t length;
     ifs >> length;
     length -= 2;
-    // Precision and id
-    ifs >> data.m_PTq;
-    // Quantization table
-    data.m_qs = (data.m_PTq & 0xf0u) ? (void *) (new uint16_t[64])
-                                    : (void *) (new uint8_t[64]);
-    for (int i = 0; i < 64; ++i) {
-        if ((data.m_PTq & 0xf0u)) {
-            ifs >> ((uint16_t *) data.m_qs)[i];
-        } else {
-            ifs >> ((uint8_t *) data.m_qs)[i];
+    while (length > 0) {
+        // Precision and id
+        uint8_t precisionAndType;
+        ifs >> precisionAndType;
+        data.m_PTq[precisionAndType & 0x0fu] = precisionAndType;
+        // Quantization table
+        data.m_qs[precisionAndType & 0x0fu] = (precisionAndType & 0xf0u)
+                                              ? (void *) (new uint16_t[64])
+                                              : (void *) (new uint8_t[64]);
+        for (int i = 0; i < 64; ++i) {
+            if ((precisionAndType & 0xf0u)) {
+                ifs >> ((uint16_t *) data.m_qs[precisionAndType & 0x0fu])[i];
+            } else {
+                ifs >> ((uint8_t *) data.m_qs[precisionAndType & 0x0fu])[i];
+            }
         }
+        length -= 1 + 64 * (((precisionAndType & 0xf0u) >> 4u) + 1);
     }
-    length -= 1 + 64 * ((data.m_PTq & 0xf0u) + 1);
     assert(length == 0);
 
     return ifs;
@@ -114,17 +143,21 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
 
 std::ostream &operator<<(std::ostream &os, const DQT &data) {
     os << "========= DQT Start ========== " << std::endl;
-    os << "Precision: " << (data.m_PTq >> 4u) << std::endl;
-    os << "ID: " << (data.m_PTq & 0x0fu) << std::endl;
-    os << "Quantization Table Content: " << std::endl;
-    for (int j = 0; j < 64; ++j) {
-        if ((data.m_PTq & 0xf0u)) {
-            os << hexify(((uint16_t *) data.m_qs)[j]) << " ";
-        } else {
-            os << hexify(((uint8_t *) data.m_qs)[j]) << " ";
-        }
-        if (j % 8 == 7) {
-            os << std::endl;
+    for (int i = 0; i < 4; ++i) {
+        if (data.m_qs[i]) {
+            os << "Precision: " << (data.m_PTq[i] >> 4u) << std::endl;
+            os << "ID: " << (data.m_PTq[i] & 0x0fu) << std::endl;
+            os << "Quantization Table Content: " << std::endl;
+            for (int j = 0; j < 64; ++j) {
+                if ((data.m_PTq[i] & 0xf0u)) {
+                    os << hexify(((uint16_t *) data.m_qs[i])[j]) << " ";
+                } else {
+                    os << hexify(((uint8_t *) data.m_qs[i])[j]) << " ";
+                }
+                if (j % 8 == 7) {
+                    os << std::endl;
+                }
+            }
         }
     }
     os << "========= DQT End ========== " << std::endl;
@@ -132,10 +165,14 @@ std::ostream &operator<<(std::ostream &os, const DQT &data) {
 }
 
 DQT::~DQT() {
-    if ((m_PTq & 0xf0u)) {
-        delete[] (uint16_t *) m_qs;
-    } else {
-        delete[] (uint8_t *) m_qs;
+    for (int i = 0; i < 4; ++i) {
+        if (m_qs[i]) {
+            if ((m_PTq[i] & 0xf0u)) {
+                delete[] (uint16_t *) m_qs[i];
+            } else {
+                delete[] (uint8_t *) m_qs[i];
+            }
+        }
     }
 }
 
@@ -202,8 +239,8 @@ std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
     for (int i = 1; i <= 16; ++i) {
         ifs >> data.m_codeAmountOfBit[i];
         data.m_length += data.m_codeAmountOfBit[i];
+        data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1u);
         if (data.m_codeAmountOfBit[i]) {
-            data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1u);
             data.m_codeword[i] = new uint8_t[data.m_codeAmountOfBit[i]];
         }
     }
@@ -229,6 +266,14 @@ std::ostream &operator<<(std::ostream &os, const HuffmanTable &data) {
     return os;
 }
 
+uint8_t HuffmanTable::getType() const {
+    return (m_typeAndId >> 4u);
+}
+
+uint8_t HuffmanTable::getId() const {
+    return (m_typeAndId & 0x0fu);
+}
+
 int HuffmanTable::getTableLength() const {
     return m_length;
 }
@@ -250,6 +295,16 @@ HuffmanTable::~HuffmanTable() {
     }
 }
 
+DHT::~DHT() {
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            if (m_huffmanTable[i][j]) {
+                delete m_huffmanTable[i][j];
+            }
+        }
+    }
+}
+
 bool DHT::checkSegment(const char header[]) {
     return checkData(header, DHT::MARKER_MAGIC_NUMBER, sizeof(DHT::MARKER_MAGIC_NUMBER));
 }
@@ -259,8 +314,12 @@ std::ifstream &operator>>(std::ifstream &ifs, DHT &data) {
     ifs >> length;
     length -= 2;
 
-    ifs >> data.m_huffmanTable;
-    length -= data.m_huffmanTable.getTableLength();
+    while (length > 0) {
+        HuffmanTable *newHuffmanTable = new HuffmanTable();
+        ifs >> *newHuffmanTable;
+        data.m_huffmanTable[newHuffmanTable->getType()][newHuffmanTable->getId()] = newHuffmanTable;
+        length -= data.m_huffmanTable[newHuffmanTable->getType()][newHuffmanTable->getId()]->getTableLength();
+    }
     assert(length == 0);
 
     return ifs;
@@ -268,7 +327,13 @@ std::ifstream &operator>>(std::ifstream &ifs, DHT &data) {
 
 std::ostream &operator<<(std::ostream &os, const DHT &data) {
     os << "========= DHT Start ========== " << std::endl;
-    os << data.m_huffmanTable;
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            if (data.m_huffmanTable[i][j]) {
+                os << *data.m_huffmanTable[i][j];
+            }
+        }
+    }
     os << "========= DHT End ========== " << std::endl;
     return os;
 }
@@ -386,8 +451,8 @@ void ComponentTable::init(uint8_t verticalSize, uint8_t horizontalSize) {
     }
 }
 
-void ComponentTable::read(std::ifstream &ifs, float lastComponentDcValue, const DHT &dcTable,
-                          const DHT &acTable, BitStreamBuffer &bsb) {
+void ComponentTable::read(std::ifstream &ifs, float lastComponentDcValue, const HuffmanTable &dcTable,
+                          const HuffmanTable &acTable, BitStreamBuffer &bsb) {
 
     for (int i = 0; i < m_verticalSize; ++i) {
         for (int j = 0; j < m_horizontalSize; ++j) {
@@ -443,9 +508,9 @@ std::ostream &operator<<(std::ostream &os, const ComponentTable &data) {
     return os;
 }
 
-void ComponentTable::multiplyWith(const DQT &dqt) {
-    if ((dqt.m_PTq >> 4u)) {
-        const uint16_t *dqtTable = reinterpret_cast<uint16_t *>(dqt.m_qs);
+void ComponentTable::multiplyWith(const DQT &dqt, int tableIndex) {
+    if ((dqt.m_PTq[tableIndex] >> 4u)) {
+        const uint16_t *dqtTable = reinterpret_cast<uint16_t *>(dqt.m_qs[tableIndex]);
         for (int i = 0; i < 8; ++i) {
             for (int j = 0; j < 8; ++j) {
                 for (int k = 0; k < m_verticalSize; ++k) {
@@ -456,7 +521,7 @@ void ComponentTable::multiplyWith(const DQT &dqt) {
             }
         }
     } else {
-        const uint8_t *dqtTable = reinterpret_cast<uint8_t *>(dqt.m_qs);
+        const uint8_t *dqtTable = reinterpret_cast<uint8_t *>(dqt.m_qs[tableIndex]);
         for (int i = 0; i < 8; ++i) {
             for (int j = 0; j < 8; ++j) {
                 for (int k = 0; k < m_verticalSize; ++k) {
@@ -509,13 +574,13 @@ float ComponentTable::convertToCorrectCoefficient(uint16_t rawCoefficient, int l
     return result;
 }
 
-float ComponentTable::readDc(std::ifstream &ifs, const DHT &dcTable, BitStreamBuffer &bsb) {
+float ComponentTable::readDc(std::ifstream &ifs, const HuffmanTable &dcTable, BitStreamBuffer &bsb) {
     ifs >> bsb;
     BitStream bs;
     bs.putWord(bsb, 1);
     uint8_t output;
     // Decode n from huffman table
-    while (!dcTable.m_huffmanTable.getCode(bs.getWord(), bs.getLength(), output)) {
+    while (!dcTable.getCode(bs.getWord(), bs.getLength(), output)) {
         if (bs.putWord(bsb, 1)) {
             ifs >> bsb;
         }
@@ -530,13 +595,13 @@ float ComponentTable::readDc(std::ifstream &ifs, const DHT &dcTable, BitStreamBu
     return convertToCorrectCoefficient(rawCoefficient, readLength);
 }
 
-ComponentTable::ACValue ComponentTable::readAc(std::ifstream &ifs, const DHT &acTable, BitStreamBuffer &bsb) {
+ComponentTable::ACValue ComponentTable::readAc(std::ifstream &ifs, const HuffmanTable &acTable, BitStreamBuffer &bsb) {
     ifs >> bsb;
     BitStream bs;
     bs.putWord(bsb, 1);
     uint8_t output;
     // Decode n from huffman table
-    while (!acTable.m_huffmanTable.getCode(bs.getWord(), bs.getLength(), output)) {
+    while (!acTable.getCode(bs.getWord(), bs.getLength(), output)) {
         if (bs.putWord(bsb, 1)) {
             ifs >> bsb;
         }
@@ -575,9 +640,9 @@ ComponentTable::~ComponentTable() {
 
 void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
     for (int i = 0; i < jpeg.m_sof0.m_componentSize; ++i) {
-        // HuffmanTable *ac, *dc
-        DHT *dc = jpeg.m_dht[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4u];
-        DHT *ac = jpeg.m_dht[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac & 0x0fu];
+        const HuffmanTable *dc = jpeg.m_dht.m_huffmanTable[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4u];
+        const HuffmanTable *ac = jpeg.m_dht.m_huffmanTable[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac &
+                                                                               0x0fu];
         m_component[i] = new ComponentTable[jpeg.m_sof0.m_componentSize];
         int verticalSize = static_cast<int>(jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0fu);
         int horizontalSize = (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4u);
@@ -652,13 +717,10 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
             std::cout << data.m_dri;
 #endif
         } else if (DHT::checkSegment(header)) {
-            DHT *newDHT = new DHT();
-            ifs >> *newDHT;
-            data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4u][newDHT->m_huffmanTable.m_typeAndId & 0x0fu] = newDHT;
+            ifs >> data.m_dht;
 #ifdef DEBUG
             std::cout
-                    << *data.m_dht[newDHT->m_huffmanTable.m_typeAndId >> 4][newDHT->m_huffmanTable.m_typeAndId &
-                                                                            0x0f];
+                    << data.m_dht;
 #endif
         } else if (SOF0::checkSegment(header)) {
             ifs >> data.m_sof0;
@@ -666,16 +728,19 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
             std::cout << data.m_sof0;
 #endif
         } else if (DQT::checkSegment(header)) {
-            DQT *newDQT = new DQT();
-            ifs >> *newDQT;
-            data.m_dqt[(newDQT->m_PTq & 0x0fu)] = newDQT;
+            ifs >> data.m_dqt;
 #ifdef DEBUG
-            std::cout << *data.m_dqt[(newDQT->m_PTq & 0x0f)];
+            std::cout << data.m_dqt;
 #endif
         } else if (APP0::checkSegment(header)) {
             ifs >> data.m_app0;
 #ifdef DEBUG
             std::cout << data.m_app0;
+#endif
+        } else if (COM::checkSegment(header)) {
+            ifs >> data.m_com;
+#ifdef DEBUG
+            std::cout << data.m_com;
 #endif
         } else {
             cout << "[ERROR] Unable to recognize header " << hexify(header, 2) << "." << endl;
@@ -692,38 +757,19 @@ std::ifstream &operator>>(std::ifstream &ifs, JPEG &data) {
     } else {
         cout << "[INFO] Successfully parse the file." << endl;
     }
+    return ifs;
 }
 
 std::ostream &operator<<(std::ostream &os, const JPEG &data) {
     os << data.m_app0;
-    for (int i = 0; i < 4; ++i) {
-        if (data.m_dqt[i]) {
-            os << data.m_dqt[i];
-        }
-    }
+    os << data.m_dqt;
     os << data.m_sof0;
-    for (int i = 0; i < 2; ++i) {
-        for (int j = 0; j < 2; ++j) {
-            if (data.m_dht[i][j]) {
-                os << data.m_dht[i][j];
-            }
-        }
-    }
+    os << data.m_dht;
     os << data.m_dri;
     os << data.m_sos;
+    return os;
 }
 
 JPEG::~JPEG() {
-    for (int i = 0; i < 4; ++i) {
-        if (m_dqt[i]) {
-            delete m_dqt[i];
-        }
-    }
-    for (int i = 0; i < 2; ++i) {
-        for (int j = 0; j < 2; ++j) {
-            if (m_dht[i][j]) {
-                delete m_dht[i][j];
-            }
-        }
-    }
+    delete m_image;
 }
