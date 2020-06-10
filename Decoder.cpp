@@ -5,6 +5,7 @@
 #include "Decoder.h"
 #include <iostream>
 #include <cmath>
+#include "bitmap_image.hpp"
 
 using namespace std;
 
@@ -207,10 +208,7 @@ void Image::fromMCUS(const JPEG &jpeg, const MCUS &mcus) {
     }
 }
 
-void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
-    ofs << "P6\n";
-    ofs << jpeg.m_sof0.m_width << " " << jpeg.m_sof0.m_height << "\n";
-    ofs << 255 << "\n";
+void Image::handleImageBuffer(const JPEG &jpeg) {
     if (!m_storedInBuffer) {
         m_componentSize = jpeg.m_sof0.m_componentSize;
         m_maxVerticalComponent = jpeg.m_sof0.m_maxVerticalComponent;
@@ -236,6 +234,13 @@ void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
         }
         m_storedInBuffer = true;
     }
+}
+
+void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
+    ofs << "P6\n";
+    ofs << jpeg.m_sof0.m_width << " " << jpeg.m_sof0.m_height << "\n";
+    ofs << 255 << "\n";
+    handleImageBuffer(jpeg);
     for (int i = 0; i < jpeg.m_sof0.m_height; ++i) {
         for (int j = 0; j < jpeg.m_sof0.m_width; ++j) {
             for (auto &k : m_imageBuffer) {
@@ -243,6 +248,17 @@ void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
             }
         }
     }
+}
+
+void Image::saveToBmp(const std::string &filename, const JPEG &jpeg) {
+    handleImageBuffer(jpeg);
+    bitmap_image image(jpeg.m_sof0.m_width, jpeg.m_sof0.m_height);
+    for (int i = 0; i < jpeg.m_sof0.m_height; ++i) {
+        for (int j = 0; j < jpeg.m_sof0.m_width; ++j) {
+            image.set_pixel(j, i, clamp(m_imageBuffer[0][i][j]), clamp(m_imageBuffer[1][i][j]), clamp(m_imageBuffer[2][i][j]));
+        }
+    }
+    image.save_image(filename);
 }
 
 float Image::yCbCrConverter(int component, float y, float cb, float cr) {

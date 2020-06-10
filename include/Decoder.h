@@ -81,7 +81,9 @@ public:
     ~Image();
     void fromMCUS(const JPEG &jpeg, const MCUS &mcus);
 
+    void handleImageBuffer(const JPEG &jpeg);
     void toPpm(std::ofstream &ofs, const JPEG &jpeg);
+    void saveToBmp(const std::string &filename, const JPEG &jpeg);
     static float yCbCrConverter(int component, float y, float cb, float cr);
     static uint8_t clamp(float value);
 
