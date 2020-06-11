@@ -328,7 +328,7 @@ Decoder &Decoder::setUpsampling(Upsampling *upsamplingStrategy) {
     m_upsampling = upsamplingStrategy;
 }
 
-void Decoder::precess(JPEG &jpeg) {
+void Decoder::process(JPEG &jpeg) {
 #ifdef DEBUG
     int lookI = 15, lookJ = 15;
     cout << "==== Before Process ====" << endl;

@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
         }
     }
     if (inputFile.empty()) {
-        if(argc >= 2) {
+        if (argc >= 2) {
             inputFile = argv[1];
         } else {
             std::cout << "[ERROR] input file is empty" << std::endl;
@@ -32,16 +32,14 @@ int main(int argc, char **argv) {
     }
     JPEG data;
     // Setup decode strategy
-    Decoder decoder = Decoder().setDequantization(new NaiveDequantization())
-            .setDezigzag(new EnhancedDezigzag())
-            .setIDCT(new DimensionReductionIDCT())
-            .setUpsampling(new NaiveUpsampling());
+    Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(
+                    new EnhancedDezigzag()).setIDCT(new DimensionReductionIDCT()).setUpsampling(new NaiveUpsampling());
 
     ifstream ifs(inputFile, std::ios::binary);
     if (ifs.is_open()) {
         ifs >> data;
         ifs.close();
-        decoder.precess(data);
+        decoder.process(data);
         if (!outputFile.empty()) {
             data.m_image->saveToBmp(outputFile, data);
         } else {

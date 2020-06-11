@@ -121,7 +121,7 @@ public:
 
     Decoder &setUpsampling(Upsampling *upsamplingStrategy);
 
-    void precess(JPEG &jpeg);
+    void process(JPEG &jpeg);
 
 private:
     IDequantization *m_dequantization;

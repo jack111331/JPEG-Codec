@@ -477,6 +477,7 @@ void ComponentTable::read(std::ifstream &ifs, float lastComponentDcValue, const 
             m_table[0][0][i][j] = readDc(ifs, dcTable, bsb);
             // if this is not in first mcu, then it must contain its previous mcu's component dc value
             m_table[0][0][i][j] += lastComponentDcValue;
+            lastComponentDcValue = m_table[0][0][i][j];
             // the remaining element are ac value
             while (count < 64) {
                 ComponentTable::ACValue acValue = readAc(ifs, acTable, bsb);
