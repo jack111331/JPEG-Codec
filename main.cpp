@@ -11,28 +11,41 @@
 
 using namespace std;
 
-string image_list[4] = {
-        "img/gig-sn01.jpg",
-        "img/gig-sn08.jpg",
-        "img/monalisa.jpg",
-        "img/teatime.jpg"
-};
+int main(int argc, char **argv) {
+    string inputFile;
+    string outputFile;
+    for (int i = 1; i < argc; ++i) {
+        string cmd(argv[i++]);
+        if (cmd == "-i") {
+            inputFile = argv[i];
+        } else if (cmd == "-o") {
+            outputFile = argv[i];
+        }
+    }
+    if (inputFile.empty()) {
+        if(argc >= 2) {
+            inputFile = argv[1];
+        } else {
+            std::cout << "[ERROR] input file is empty" << std::endl;
+            exit(1);
+        }
+    }
+    JPEG data;
+    // Setup decode strategy
+    Decoder decoder = Decoder().setDequantization(new NaiveDequantization())
+            .setDezigzag(new EnhancedDezigzag())
+            .setIDCT(new DimensionReductionIDCT())
+            .setUpsampling(new NaiveUpsampling());
 
-int main() {
-    for(int i = 0;i < 4;++i) {
-        JPEG data;
-        Decoder decoder = Decoder().setDequantization(new NaiveDequantization()).setDezigzag(new EnhancedDezigzag()).setIDCT(
-                new DimensionReductionIDCT()).setUpsampling(new NaiveUpsampling());
-
-        ifstream ifs(image_list[i], std::ios::binary);
-        if (ifs.is_open()) {
-            ifs >> data;
-            ifs.close();
-            decoder.precess(data);
-            ofstream ofs(image_list[i].substr(0, image_list[i].find("."))+".ppm", std::ios::binary);
-            data.m_image->toPpm(ofs, data);
-            ofs.close();
-            data.m_image->saveToBmp(image_list[i].substr(0, image_list[i].find("."))+".bmp", data);
+    ifstream ifs(inputFile, std::ios::binary);
+    if (ifs.is_open()) {
+        ifs >> data;
+        ifs.close();
+        decoder.precess(data);
+        if (!outputFile.empty()) {
+            data.m_image->saveToBmp(outputFile, data);
+        } else {
+            data.m_image->saveToBmp(inputFile.substr(0, inputFile.find(".")) + ".bmp", data);
         }
     }
 

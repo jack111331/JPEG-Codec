@@ -17,6 +17,7 @@ void NaiveDequantization::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
     int mcuHeight = jpeg.m_mcus.m_mcuHeight;
+    // multiply each mcu each component with dqt
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
@@ -40,6 +41,7 @@ void NaiveDezigzag::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
     int mcuHeight = jpeg.m_mcus.m_mcuHeight;
+    // using above zigzag table to dezigzag each mcu each component
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
@@ -68,6 +70,7 @@ void EnhancedDezigzag::process(JPEG &jpeg) {
     const SOF0 &sof0 = jpeg.m_sof0;
     int mcuWidth = jpeg.m_mcus.m_mcuWidth;
     int mcuHeight = jpeg.m_mcus.m_mcuHeight;
+    // using above swap version zigzag table to dezigzag each mcu each component
     for (int i = 0; i < mcuHeight; ++i) {
         for (int j = 0; j < mcuWidth; ++j) {
             for (int k = 0; k < sof0.m_componentSize; ++k) {
@@ -78,6 +81,7 @@ void EnhancedDezigzag::process(JPEG &jpeg) {
 }
 
 float IIDCT::coefficientPrecompute(int x, int y) {
+    // precompute coefficient
     if (x == 0 && y == 0) {
         return 0.5f;
     } else if (x == 0 || y == 0) {
@@ -119,6 +123,7 @@ void NaiveIDCT::performIdctOnComponentTable(ComponentTable &table, ComponentTabl
 
 float
 NaiveIDCT::computeCoefficientAtIndex(ComponentTable &table, int verticalComponent, int horizonComponent, int i, int j) {
+    // use O(N^4) to inverse DCT
     float result = 0;
     const double pi = acos(-1);
     for (int x = 0; x < 8; ++x) {
@@ -154,6 +159,9 @@ void DimensionReductionIDCT::performIdctOnComponentTable(ComponentTable &table, 
     float precompute[8][8];
     for (int k = 0; k < table.m_verticalSize; ++k) {
         for (int l = 0; l < table.m_horizontalSize; ++l) {
+            // use O(N^3) to inverse DCT
+            // move j and x term into front summation
+            // use precompute term to accelerate IDCT
             for (int j = 0; j < 8; ++j) {
                 for (int x = 0; x < 8; ++x) {
                     precompute[j][x] = (1 / sqrt(2)) * cos(0) * table.m_table[x][0][k][l];
@@ -177,6 +185,8 @@ void DimensionReductionIDCT::performIdctOnComponentTable(ComponentTable &table, 
 }
 
 void ImageBlock::FromComponentTable(const ComponentTable &table, int maxVerticalComponent, int maxHorizontalComponent) {
+    // move component table into image MCU's block
+    // upsampling
     m_table = new float *[8 * maxVerticalComponent];
     for (int i = 0; i < 8 * maxVerticalComponent; ++i) {
         m_table[i] = new float[8 * maxHorizontalComponent];
@@ -208,6 +218,7 @@ void Image::fromMCUS(const JPEG &jpeg, const MCUS &mcus) {
 }
 
 void Image::handleImageBuffer(const JPEG &jpeg) {
+    // compute each image mcu block into image buffer
     if (!m_storedInBuffer) {
         m_componentSize = jpeg.m_sof0.m_componentSize;
         m_maxVerticalComponent = jpeg.m_sof0.m_maxVerticalComponent;
@@ -250,6 +261,7 @@ void Image::toPpm(std::ofstream &ofs, const JPEG &jpeg) {
 }
 
 void Image::saveToBmp(const std::string &filename, const JPEG &jpeg) {
+    // use external library to save image buffer's pixel into bmp image
     handleImageBuffer(jpeg);
     bitmap_image image(jpeg.m_sof0.m_width, jpeg.m_sof0.m_height);
     for (int i = 0; i < jpeg.m_sof0.m_height; ++i) {
@@ -276,6 +288,7 @@ uint8_t Image::clamp(float value) {
     } else if (value < 0) {
         return 0;
     } else {
+        // round value
         return (value - ((int)value) >= 0.5 ? value + 1 : value);
     }
 }

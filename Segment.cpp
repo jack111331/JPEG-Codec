@@ -42,6 +42,7 @@ bool APP0::checkSegment(const char header[]) {
 std::ifstream &operator>>(std::ifstream &ifs, APP0 &data) {
     uint16_t length;
     ifs >> length;
+    // subtract length itself size
     length -= 2;
     char identifier[6];
     readData(ifs, identifier, sizeof(APP0::IDENTIFIER_MAGIC_NUMBER) - 1);
@@ -49,6 +50,7 @@ std::ifstream &operator>>(std::ifstream &ifs, APP0 &data) {
         cout << "[ERROR] APP0 identifier mismatch." << endl;
         exit(1);
     }
+    // subtract identifier length
     length -= 5;
     ifs >> data.m_version;
     ifs >> data.m_densityUnit;
@@ -57,6 +59,7 @@ std::ifstream &operator>>(std::ifstream &ifs, APP0 &data) {
     ifs >> data.m_xThumbnail;
     ifs >> data.m_yThumbnail;
 
+    // store thumbnail
     int thumbnailSize = data.m_xThumbnail * data.m_yThumbnail;
     if (thumbnailSize) {
         data.m_thumbnailData = new Color[thumbnailSize];
@@ -95,6 +98,7 @@ std::ifstream &operator>>(std::ifstream &ifs, COM &data) {
     uint16_t length;
     ifs >> length;
     length -= 2;
+    // read in comment
     char *comment = new char[length + 1];
     ifs.read(comment, length);
     comment[length] = 0;
@@ -119,7 +123,7 @@ std::ifstream &operator>>(std::ifstream &ifs, DQT &data) {
     ifs >> length;
     length -= 2;
     while (length > 0) {
-        // Precision and id
+        // read in precision (higher 4 bit, 0 indicate 8-bit, 1 indicate 16-bit) and id (lower 4 bit)
         uint8_t precisionAndType;
         ifs >> precisionAndType;
         data.m_PTq[precisionAndType & 0x0fu] = precisionAndType;
@@ -178,6 +182,7 @@ DQT::~DQT() {
 
 std::ifstream &operator>>(std::ifstream &ifs, ColorComponent &data) {
     ifs >> data.m_id;
+    // horizontal (higher 4 bit), vertical sampling factor (lower 4 bit)
     ifs >> data.m_sampleFactor;
     ifs >> data.m_dqtId;
     return ifs;
@@ -208,8 +213,10 @@ std::ifstream &operator>>(std::ifstream &ifs, SOF0 &data) {
         ColorComponent colorComponent{};
         ifs >> colorComponent;
         data.m_component[colorComponent.m_id - 1] = colorComponent;
+        // select max horizontal sampling factor as sampling factor per mcu
         data.m_maxHorizontalComponent = std::max(data.m_maxHorizontalComponent,
                                                  (uint8_t) (data.m_component[i].m_sampleFactor >> 4u));
+        // select max vertical sampling factor as sampling factor per mcu
         data.m_maxVerticalComponent = std::max(data.m_maxVerticalComponent,
                                                (uint8_t) (data.m_component[i].m_sampleFactor & 0x0fu));
     }
@@ -233,12 +240,16 @@ std::ostream &operator<<(std::ostream &os, const SOF0 &data) {
 
 std::ifstream &operator>>(std::ifstream &ifs, HuffmanTable &data) {
     ifs >> data.m_typeAndId;
-    // Quantization table
+    // Huffman table
     data.m_length += 1;
     data.m_length += 16;
     for (int i = 1; i <= 16; ++i) {
         ifs >> data.m_codeAmountOfBit[i];
         data.m_length += data.m_codeAmountOfBit[i];
+        // canonical huffman table
+        // accelerate getCode() table lookup using pre-calculated start address of each codeword length
+        // because this kind of huffman table move nodes of same depth to their right, so we can implement getCode() fas-
+        // ter by using pre-calculated start address of each codeword length
         data.m_table[i] = ((data.m_table[i - 1] + (uint32_t) data.m_codeAmountOfBit[i - 1]) << 1u);
         if (data.m_codeAmountOfBit[i]) {
             data.m_codeword[i] = new uint8_t[data.m_codeAmountOfBit[i]];
@@ -281,6 +292,8 @@ int HuffmanTable::getTableLength() const {
 bool HuffmanTable::getCode(uint16_t codeword, int length, uint8_t &output) const {
     if (m_codeAmountOfBit[length] && codeword >= m_table[length] &&
         codeword - m_table[length] < m_codeAmountOfBit[length]) {
+        // using pre-calculated start address of each codeword length, we can use codeword and subtract it from start add-
+        // ress of that length to get the corresponding output
         output = m_codeword[length][codeword - m_table[length]];
         return true;
     }
@@ -418,6 +431,9 @@ std::ifstream &operator>>(std::ifstream &ifs, BitStreamBuffer &data) {
 
 int BitStream::putWord(BitStreamBuffer &input, int length) {
     int bitToRead = std::min(8 - input.m_readLength, length);
+    // put corresponding length of bit in input into bitstream
+    // if there are some remaining bit not read from input
+    // output remaining bit to read
     m_buffer <<= bitToRead;
     m_buffer |= ((input.m_buffer >> ((8 - input.m_readLength) - bitToRead)) & ((1 << bitToRead) - 1));
     m_length += bitToRead;
@@ -457,9 +473,11 @@ void ComponentTable::read(std::ifstream &ifs, float lastComponentDcValue, const 
     for (int i = 0; i < m_verticalSize; ++i) {
         for (int j = 0; j < m_horizontalSize; ++j) {
             uint32_t count = 1;
+            // first element of corresponding table is dc
             m_table[0][0][i][j] = readDc(ifs, dcTable, bsb);
+            // if this is not in first mcu, then it must contain its previous mcu's component dc value
             m_table[0][0][i][j] += lastComponentDcValue;
-            lastComponentDcValue = m_table[0][0][i][j];
+            // the remaining element are ac value
             while (count < 64) {
                 ComponentTable::ACValue acValue = readAc(ifs, acTable, bsb);
                 switch (acValue.state) {
@@ -509,6 +527,7 @@ std::ostream &operator<<(std::ostream &os, const ComponentTable &data) {
 }
 
 void ComponentTable::multiplyWith(const DQT &dqt, int tableIndex) {
+    // multiply component table with dqt
     if ((dqt.m_PTq[tableIndex] >> 4u)) {
         const uint16_t *dqtTable = reinterpret_cast<uint16_t *>(dqt.m_qs[tableIndex]);
         for (int i = 0; i < 8; ++i) {
@@ -535,6 +554,7 @@ void ComponentTable::multiplyWith(const DQT &dqt, int tableIndex) {
 }
 
 void ComponentTable::replaceWith(const ComponentTable &table, int (*replaceTable)[8]) {
+    // replace with another component table using replace table
     for (int i = 0; i < 8; ++i) {
         for (int j = 0; j < 8; ++j) {
             for (int k = 0; k < m_verticalSize; ++k) {
@@ -548,6 +568,7 @@ void ComponentTable::replaceWith(const ComponentTable &table, int (*replaceTable
 }
 
 void ComponentTable::inPlaceReplaceWith(int (*swapTable)[8]) {
+    // in place swap using swap table
     for (int i = 0; i < 8; ++i) {
         for (int j = 0; j < 8; ++j) {
             uint8_t swapPosition = swapTable[i][j];
@@ -564,6 +585,8 @@ void ComponentTable::inPlaceReplaceWith(int (*swapTable)[8]) {
 
 float ComponentTable::convertToCorrectCoefficient(uint16_t rawCoefficient, int length) {
     float result;
+    // like 1's complement, if first bit is 0, then return its negative
+    // else return input
     if ((rawCoefficient >> (length - 1)) == 0) {
         rawCoefficient ^= ((1 << length) - 1);
         result = rawCoefficient;
@@ -580,6 +603,7 @@ float ComponentTable::readDc(std::ifstream &ifs, const HuffmanTable &dcTable, Bi
     bs.putWord(bsb, 1);
     uint8_t output;
     // Decode n from huffman table
+    // read 1 bit per time until it match corresponding dc huffman table
     while (!dcTable.getCode(bs.getWord(), bs.getLength(), output)) {
         if (bs.putWord(bsb, 1)) {
             ifs >> bsb;
@@ -587,6 +611,7 @@ float ComponentTable::readDc(std::ifstream &ifs, const HuffmanTable &dcTable, Bi
     }
     bs.clear();
     int readLength = output;
+    // read following length of decoded word
     while ((output = bs.putWord(bsb, output))) {
         ifs >> bsb;
     }
@@ -601,22 +626,27 @@ ComponentTable::ACValue ComponentTable::readAc(std::ifstream &ifs, const Huffman
     bs.putWord(bsb, 1);
     uint8_t output;
     // Decode n from huffman table
+    // read 1 bit per time until it match corresponding dc huffman table
     while (!acTable.getCode(bs.getWord(), bs.getLength(), output)) {
         if (bs.putWord(bsb, 1)) {
             ifs >> bsb;
         }
     }
     ComponentTable::ACValue acValue{};
+    // if decoded word is 0x00, then it indicated following elements of component table is 0
     if (output == 0x00) {
         acValue.state = AC_ALL_ZERO;
+    // else if decoded word is 0xF0, then it indicated following 16 elements of component table is 0
     } else if (output == 0xF0) {
         acValue.state = AC_FOLLOWING_SIXTEEN_ZERO;
     } else {
+        // decoded higher 4 bit indicate following n elements of component table is 0, lower 4 bit indicate bit length to read
         acValue.state = AC_NORMAL_STATE;
         acValue.trailingZero = (output >> 4u);
         output = (output & 0x0Fu);
         int readLength = output;
         bs.clear();
+        // read following length of decoded word
         while ((output = bs.putWord(bsb, output))) {
             ifs >> bsb;
         }
@@ -640,10 +670,12 @@ ComponentTable::~ComponentTable() {
 
 void MCU::read(std::ifstream &ifs, const JPEG &jpeg, BitStreamBuffer &bsb) {
     for (int i = 0; i < jpeg.m_sof0.m_componentSize; ++i) {
+        // higher 4 bit is the dc table use to decode this component's, lower 4 bit is the ac table use to decode this component's
         const HuffmanTable *dc = jpeg.m_dht.m_huffmanTable[JPEG::DC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac >> 4u];
         const HuffmanTable *ac = jpeg.m_dht.m_huffmanTable[JPEG::AC_COMPONENT][jpeg.m_sos.m_component[i].m_dcac &
                                                                                0x0fu];
         m_component[i] = new ComponentTable[jpeg.m_sof0.m_componentSize];
+        // higher 4 bit is this component's horizontal sample factor, lower 4 bit is this component's vertical sample factor
         int verticalSize = static_cast<int>(jpeg.m_sof0.m_component[i].m_sampleFactor & 0x0fu);
         int horizontalSize = (jpeg.m_sof0.m_component[i].m_sampleFactor >> 4u);
         m_component[i]->init(verticalSize, horizontalSize);
@@ -674,6 +706,7 @@ void MCUS::read(std::ifstream &ifs, const JPEG &jpeg) {
     m_mcuHeight = (jpeg.m_sof0.m_height - 1) / (8 * jpeg.m_sof0.m_maxVerticalComponent) + 1;
     m_mcu = new MCU *[m_mcuHeight];
     BitStreamBuffer bsb;
+    // read each mcu
     for (int i = 0; i < m_mcuHeight; ++i) {
         m_mcu[i] = new MCU[m_mcuWidth];
         for (int j = 0; j < m_mcuWidth; ++j) {
