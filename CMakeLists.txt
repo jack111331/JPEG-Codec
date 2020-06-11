@@ -28,3 +28,4 @@ set(all_code_files
 
 add_executable(JPEG-Codec ${all_code_files})
 target_link_libraries(JPEG-Codec)
+file(RENAME ${CMAKE_BINARY_DIR}/JPEG-Codec.exe ${CMAKE_BINARY_DIR}/main.exe)

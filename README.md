@@ -25,7 +25,11 @@ The generated binary will be in cmake/build directory
 ## Usage
 * Decode
 ```
-JPEG-Codec -i [input file name] (-o output file name) 
+main -i [input file name] (-o output file name)
+```
+or
+```
+main [input file name]
 ```
 ## Environment
 * Testing
